@@ -12,16 +12,7 @@ void CDraw::UpdateScreenSize()
 
 void CDraw::UpdateW2SMatrix()
 {
-	CViewSetup ViewSetup = {};
-
-	if (I::BaseClientDLL->GetPlayerView(ViewSetup))
-	{
-		static VMatrix WorldToView = {};
-		static VMatrix ViewToProjection = {};
-		static VMatrix WorldToPixels = {};
-
-		I::RenderView->GetMatricesForView(ViewSetup, &WorldToView, &ViewToProjection, &m_WorldToProjection, &WorldToPixels);
-	}
+	m_WorldToProjection = I::EngineClient->WorldToScreenMatrix();
 }
 
 bool CDraw::W2S(const Vec3 &vOrigin, Vec3 &vScreen)

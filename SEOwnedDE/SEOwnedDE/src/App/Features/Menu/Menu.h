@@ -1,58 +1,66 @@
 #pragma once
 
 #include "../../../SDK/SDK.h"
+#include "../../../../include/imgui/imgui.h"
+#include "../../../../include/imgui/backends/imgui_impl_win32.h"
+#include "../../../../include/imgui/backends/imgui_impl_dx9.h"
+#include <string>
+
+struct IDirect3DDevice9;
 
 class CMenu
 {
 private:
-	bool m_bOpen = false;
-	bool m_bMenuWindowHovered = false;
-	int m_nCursorX = 0, m_nCursorY = 0;
+    bool m_bOpen = false;
+    bool m_bInitialized = false;
+    bool m_bImGuiContextCreated = false;
 
-	int m_nLastGroupBoxY = 0, m_nLastGroupBoxW = 0;
-	int m_nLastButtonW = 0;
-
-	bool m_bClickConsumed = false;
-	std::map<void *, bool> m_mapStates = {};
-
-	//std::string m_strConfigPath = {};
-
-	std::unique_ptr<Color_t[]> m_pGradient = nullptr;
-	unsigned int m_nColorPickerTextureId = 0;
-
-private:
-	void Drag(int &x, int &y, int w, int h, int offset_y);
-	bool IsHovered(int x, int y, int w, int h, void *pVar, bool bStrict = false);
-	bool IsHoveredSimple(int x, int y, int w, int h);
-
-	bool CheckBox(const char *szLabel, bool &bVar);
-	bool SliderFloat(const char *szLabel, float &flVar, float flMin, float flMax, float flStep, const char *szFormat);
-	bool SliderInt(const char *szLabel, int &nVar, int nMin, int nMax, int nStep);
-	bool InputKey(const char *szLabel, int &nKeyOut);
-	bool Button(const char *szLabel, bool bActive = false, int nCustomWidth = 0);
-	bool playerListButton(const wchar_t *label, int nCustomWidth, Color_t clr, bool center_txt);
-	bool InputText(const char *szLabel, const char *szLabel2, std::string &strOutput);
-	bool SelectSingle(const char *szLabel, int &nVar, const std::vector<std::pair<const char *, int>> &vecSelects);
-	bool SelectMulti(const char *szLabel, std::vector<std::pair<const char *, bool &>> &vecSelects);
-	bool ColorPicker(const char *szLabel, Color_t &colVar);
-	void GroupBoxStart(const char *szLabel, int nWidth);
-	void GroupBoxEnd();
+    // ImGui state
+    ImVec2* m_vWindowSize;
+    ImVec2* m_vWindowPos;
 
 public:
-	inline bool IsOpen() { return m_bOpen; }
-	inline bool IsMenuWindowHovered() { return m_bMenuWindowHovered; }
+    // DirectX9 device reference
+    IDirect3DDevice9* m_pDevice;
 
-	bool m_bWantTextInput = false;
-	bool m_bInKeybind = false;
+    inline bool IsOpen() { return m_bOpen; }
+    inline bool IsMenuWindowHovered() { return m_bInitialized && ImGui::IsWindowHovered(); }
+    inline bool IsInitialized() { return m_bInitialized; }
+
+    bool m_bWantTextInput = false;
+    bool m_bInKeybind = false;
 
 private:
-	void MainWindow();
-	void Snow();
-	void Indicators();
+    // Helper functions for ImGui controls
+    bool InputKey(const char* szLabel, int& nKeyOut);
+    void KeybindPopup(const char* szLabel, int& nKeyOut);
+    std::string GetKeyName(int nKey);
+
+    // Tab rendering functions
+    void RenderAimTab();
+    void RenderVisualsTab();
+    void RenderMiscTab();
+    void RenderPlayersTab();
+    void RenderConfigsTab();
+
+    // Sub-tab rendering functions
+    void RenderAimbotTab();
+    void RenderTriggerbotTab();
+    void RenderESPTab();
+    void RenderRadarTab();
+    void RenderMaterialsTab();
+    void RenderOutlinesTab();
+    void RenderOtherTab();
+    void RenderOther2Tab();
+    void RenderColorsTab();
 
 public:
-	void Run();
-	CMenu();
+    void Run();
+    void Initialize(IDirect3DDevice9* pDevice = nullptr);
+    void Shutdown();
+    void RenderImguiFrame();
+    CMenu();
+    ~CMenu();
 };
 
 MAKE_SINGLETON_SCOPED(CMenu, Menu, F);

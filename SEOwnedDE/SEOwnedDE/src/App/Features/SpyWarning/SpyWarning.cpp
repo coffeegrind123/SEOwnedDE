@@ -131,3 +131,108 @@ void CSpyWarning::Run()
 		}
 	}
 }
+
+void CSpyWarning::RunImGui()
+{
+	if (!CFG::Viuals_SpyWarning_Active)
+		return;
+
+	// Anti screenshot?
+	if (CFG::Misc_Clean_Screenshot && I::EngineClient->IsTakingScreenshot())
+	{
+		return;
+	}
+
+	// Set ImGui draw list
+	ImDrawList* drawList = ImGui::GetBackgroundDrawList();
+	H::DrawImGui->SetDrawList(drawList);
+
+	// Matrices updated once per frame in Present hook to prevent conflicts
+
+	DrawSpyWarningImGui();
+}
+
+void CSpyWarning::DrawSpyWarningImGui()
+{
+	const auto pLocal = H::Entities->GetLocal();
+	if (!pLocal || pLocal->deadflag())
+		return;
+
+	std::vector<C_TFPlayer*> spies{};
+	const auto localRenderCenter = pLocal->GetRenderCenter();
+	for (const auto pEntity : H::Entities->GetGroup(EEntGroup::PLAYERS_ENEMIES))
+	{
+		if (!pEntity)
+			continue;
+
+		// Is the player valid?
+		const auto pPlayer = pEntity->As<C_TFPlayer>();
+		if (!pPlayer || pPlayer->deadflag() || pPlayer->m_iClass() != TF_CLASS_SPY)
+			continue;
+
+		// Maximum distance
+		const auto renderCenter = pPlayer->GetRenderCenter();
+		if (renderCenter.DistTo(localRenderCenter) > MAX_DIST)
+			continue;
+
+		// Are we in a halloween kart?
+		if (pPlayer->InCond(TF_COND_HALLOWEEN_KART) || pPlayer->InCond(TF_COND_HALLOWEEN_GHOST_MODE))
+			continue;
+
+		// Ignore cloaked
+		if (CFG::Viuals_SpyWarning_Ignore_Cloaked)
+		{
+			if (pPlayer->InCond(TF_COND_DISGUISED) || pPlayer->InCond(TF_COND_STEALTHED))
+				continue;
+		}
+
+		spies.push_back(pPlayer);
+	}
+
+	// Directional arrows
+	for (const auto pSpy : spies)
+	{
+		Vec3 vScreen = {};
+
+		const Vec3 spyPos = pSpy->GetRenderCenter();
+		const int nScreenCenterX = static_cast<int>(static_cast<float>(H::DrawImGui->GetScreenW()) * SCREEN_OFFSET_X_SCALE);
+		const int nScreenCenterY = static_cast<int>(static_cast<float>(H::DrawImGui->GetScreenH()) * SCREEN_OFFSET_Y_SCALE);
+
+		if (H::DrawImGui->W2S(spyPos, vScreen))
+		{
+			if (vScreen.x < 0 || vScreen.x > H::DrawImGui->GetScreenW() || vScreen.y < 0 || vScreen.y > H::DrawImGui->GetScreenH())
+			{
+				Vec3 vAngle = {};
+				Math::VectorAngles({nScreenCenterX - vScreen.x, nScreenCenterY - vScreen.y, 0.0f}, vAngle);
+
+				const float flYaw = DEG2RAD(vAngle.y);
+
+				// Scale the triangle
+				const auto dist = pLocal->GetShootPos().DistTo(spyPos);
+				const float flRadius = Math::RemapValClamped(dist, 0.0f, MAX_DIST, ARROW_RADIUS, ARROW_RADIUS * 2.0f);
+				const float flScale = Math::RemapValClamped(dist, 0.0f, MAX_DIST, 2.0f, 1.0f);
+
+				const float flDrawX = nScreenCenterX - flRadius * cosf(flYaw);
+				const float flDrawY = nScreenCenterY - flRadius * sinf(flYaw);
+
+				std::array vPoints = {
+					Vec2(flDrawX + (6.0f * flScale), flDrawY + (6.0f * flScale)),
+					Vec2(flDrawX - (4.0f * flScale), flDrawY),
+					Vec2(flDrawX + (6.0f * flScale), flDrawY - (6.0f * flScale))
+				};
+
+				Math::RotateTriangle(vPoints, vAngle.y);
+				H::DrawImGui->FilledTriangle(vPoints, F::VisualUtils->GetEntityColor(pLocal, pSpy));
+			}
+		}
+	}
+
+	// Spy icon
+	if (!spies.empty())
+	{
+		const int nScreenCenterX = static_cast<int>(static_cast<float>(H::DrawImGui->GetScreenW()) * SCREEN_OFFSET_X_SCALE);
+		const int nScreenCenterY = static_cast<int>(static_cast<float>(H::DrawImGui->GetScreenH()) * SCREEN_OFFSET_Y_SCALE);
+
+		H::DrawImGui->Texture(nScreenCenterX, nScreenCenterY, 36, 36, F::VisualUtils->GetClassIcon(TF_CLASS_SPY), POS_CENTERXY);
+	}
+}

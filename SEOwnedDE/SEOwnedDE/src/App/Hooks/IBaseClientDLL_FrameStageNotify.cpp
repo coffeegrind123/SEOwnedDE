@@ -4,6 +4,7 @@
 #include "../Features/WorldModulation/WorldModulation.h"
 #include "../Features/LagRecords/LagRecords.h"
 #include "../Features/MiscVisuals/MiscVisuals.h"
+#include "../Features/Radar/Radar.h"
 
 MAKE_HOOK(IBaseClientDLL_FrameStageNotify, Memory::GetVFunc(I::BaseClientDLL, 35), void, __fastcall,
 	void* ecx, ClientFrameStage_t curStage)
@@ -25,14 +26,17 @@ MAKE_HOOK(IBaseClientDLL_FrameStageNotify, Memory::GetVFunc(I::BaseClientDLL, 35
 
 			if (const auto pLocal = H::Entities->GetLocal())
 			{
-				for (const auto pEntity : H::Entities->GetGroup(EEntGroup::PLAYERS_ALL))
+				// Wrap entity access in try-catch to prevent crashes during server transitions
+				try
 				{
-					if (!pEntity || pEntity == pLocal)
-						continue;
+					for (const auto pEntity : H::Entities->GetGroup(EEntGroup::PLAYERS_ALL))
+					{
+						if (!pEntity || pEntity == pLocal)
+							continue;
 
-					const auto pPlayer = pEntity->As<C_TFPlayer>();
+						const auto pPlayer = pEntity->As<C_TFPlayer>();
 
-					if (const auto nDifference = std::clamp(TIME_TO_TICKS(pPlayer->m_flSimulationTime() - pPlayer->m_flOldSimulationTime()), 0, 22))
+						if (const auto nDifference = std::clamp(TIME_TO_TICKS(pPlayer->m_flSimulationTime() - pPlayer->m_flOldSimulationTime()), 0, 22))
 					{
 						//deal with animations, local player is dealt with in RunCommand
 						if (CFG::Misc_Accuracy_Improvements)
@@ -68,27 +72,32 @@ MAKE_HOOK(IBaseClientDLL_FrameStageNotify, Memory::GetVFunc(I::BaseClientDLL, 35
 							}
 						}
 					}
+					}
+
+					F::LagRecords->UpdateRecords();
+
+					if (G::mapVelFixRecords.size() > 64)
+					{
+						G::mapVelFixRecords.clear();
+					}
+
+					for (const auto pEntity : H::Entities->GetGroup(EEntGroup::PLAYERS_ALL))
+					{
+						if (!pEntity)
+							continue;
+
+						const auto pPlayer = pEntity->As<C_TFPlayer>();
+
+						if (pPlayer->deadflag())
+							continue;
+
+						G::mapVelFixRecords[pPlayer] = { pPlayer->m_vecOrigin(), pPlayer->m_fFlags(), pPlayer->m_flSimulationTime() };
+					}
 				}
-			}
-
-			F::LagRecords->UpdateRecords();
-
-			if (G::mapVelFixRecords.size() > 64)
-			{
-				G::mapVelFixRecords.clear();
-			}
-
-			for (const auto pEntity : H::Entities->GetGroup(EEntGroup::PLAYERS_ALL))
-			{
-				if (!pEntity)
-					continue;
-
-				const auto pPlayer = pEntity->As<C_TFPlayer>();
-
-				if (pPlayer->deadflag())
-					continue;
-
-				G::mapVelFixRecords[pPlayer] = { pPlayer->m_vecOrigin(), pPlayer->m_fFlags(), pPlayer->m_flSimulationTime() };
+				catch (...)
+				{
+					// Silently handle crashes from accessing freed entities during server transitions
+				}
 			}
 
 			break;
@@ -97,6 +106,11 @@ MAKE_HOOK(IBaseClientDLL_FrameStageNotify, Memory::GetVFunc(I::BaseClientDLL, 35
 		case FRAME_RENDER_START:
 		{
 			H::Input->Update();
+
+			// Update view angles for radar
+			F::Radar->UpdateViewAngleCache();
+
+			H::Entities->UpdateRenderCache();
 
 			F::WorldModulation->UpdateWorldModulation();
 			F::MiscVisuals->ViewModelSway();

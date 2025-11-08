@@ -283,3 +283,62 @@ void CSeedPred::Paint()
 		);
 	}
 }
+
+void CSeedPred::PaintImGui()
+{
+	if (!CFG::Exploits_SeedPred_Active || I::EngineVGui->IsGameUIVisible() || SDKUtils::BInEndOfMatch() || m_ServerTime <= 0.0f)
+	{
+		return;
+	}
+
+	// Anti-Screenshot
+	if (CFG::Misc_Clean_Screenshot && I::EngineClient->IsTakingScreenshot())
+	{
+		return;
+	}
+
+	// Set ImGui draw list
+	ImDrawList* drawList = ImGui::GetBackgroundDrawList();
+	H::DrawImGui->SetDrawList(drawList);
+
+	// Matrices updated once per frame in Present hook to prevent conflicts
+
+	DrawSeedPredImGui();
+}
+
+void CSeedPred::DrawSeedPredImGui()
+{
+	// Indicator
+	if (CFG::Exploits_SeedPred_DrawIndicator)
+	{
+		const std::chrono::hh_mm_ss time{std::chrono::seconds(static_cast<int>(m_ServerTime))};
+
+		int x{2};
+		int y{2};
+
+		H::DrawImGui->String(
+			H::Fonts->Get(EFonts::ESP_SMALL),
+			x, y,
+			{200, 200, 200, 255}, POS_DEFAULT,
+			std::format("{}h {}m {}s (step {:.0f})", time.hours().count(), time.minutes().count(), time.seconds().count(), CalcMantissaStep(m_ServerTime)).c_str()
+		);
+
+		y += 10;
+
+		H::DrawImGui->String(
+			H::Fonts->Get(EFonts::ESP_SMALL),
+			x, y,
+			!m_Synced ? Color_t{250, 130, 49, 255} : Color_t{32, 191, 107, 255}, POS_DEFAULT,
+			!m_Synced ? "syncing.." : std::format("synced ({})", m_SyncOffset).c_str()
+		);
+
+		y += 10;
+
+		H::DrawImGui->String(
+			H::Fonts->Get(EFonts::ESP_SMALL),
+			x, y,
+			{200, 200, 200, 255}, POS_DEFAULT,
+			std::format("seed: {}", GetSeed()).c_str()
+		);
+	}
+}

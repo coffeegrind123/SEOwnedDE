@@ -7,13 +7,15 @@
 #include "Features/WorldModulation/WorldModulation.h"
 #include "Features/Paint/Paint.h"
 #include "Features/Menu/Menu.h"
+#include "Features/Menu/basicHook.h"
 #include "Features/Players/Players.h"
 
 #include "Features/CFG.h"
 
 void CApp::Start()
 {
-	while (!Memory::FindSignature("client.dll", "48 8B 0D ? ? ? ? 48 8B 10 48 8B 19 48 8B C8 FF 92"))
+	while (!Memory::FindSignature("client.dll", "48 8B 0D ? ? ? ? 4C 8D 05") ||
+	       !Memory::FindSignature("client.dll", "48 8B 0D ? ? ? ? F3 0F 59 CA 44 8D 42"))
 	{
 		bUnload = GetAsyncKeyState(VK_F11) & 0x8000;
 		if (bUnload)
@@ -38,6 +40,9 @@ void CApp::Start()
 	U::HookManager->InitializeAllHooks();
 
 	Hooks::WINAPI_WndProc::Init();
+
+	// Initialize Steam overlay hooks for ImGui rendering
+	hooks::Initialize();
 
 	F::Players->Parse();
 
@@ -87,6 +92,9 @@ void CApp::Shutdown()
 {
 	if (!bUnload)
 	{
+		// Uninitialize Steam overlay hooks first
+		hooks::Uninitialize();
+
 		U::HookManager->FreeAllHooks();
 
 		Hooks::WINAPI_WndProc::Release();
@@ -109,6 +117,6 @@ void CApp::Shutdown()
 			I::MatSystemSurface->SetCursorAlwaysVisible(false);
 		}
 	}
-	
+
 	I::CVar->ConsoleColorPrintf({ 255, 70, 70, 255 }, "SEOwnedDE Unloaded!\n");
 }

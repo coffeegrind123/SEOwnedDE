@@ -23,7 +23,9 @@ void CInput::Update()
 {
 	m_bGameFocused = SDKUtils::IsGameWindowInFocus();
 
-	for (int n = 0; n < 256; n++)
+	m_Keys[0] = NONE;
+
+	for (int n = 1; n < 256; n++)
 	{
 		if (!m_bGameFocused) {
 			m_Keys[n] = NONE;

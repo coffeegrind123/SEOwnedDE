@@ -24,6 +24,17 @@ enum class EEntGroup
 	MVM_MONEY
 };
 
+struct CachedEntityData
+{
+	matrix3x4_t transform;
+	Vec3 renderOrigin;
+	Vec3 mins;
+	Vec3 maxs;
+	int frameNumber;
+	matrix3x4_t boneMatrix[MAXSTUDIOBONES];
+	bool bBonesValid;
+};
+
 class CEntityHelper
 {
 public:
@@ -32,8 +43,12 @@ public:
 
 private:
 	std::map<EEntGroup, std::vector<C_BaseEntity*>> m_mapGroups = {};
+	std::map<EEntGroup, std::vector<C_BaseEntity*>> m_mapGroupsTemp = {};
 	std::map<int, bool> m_mapHealthPacks = {};
 	std::map<int, bool> m_mapAmmoPacks = {};
+	std::unordered_map<C_BaseEntity*, CachedEntityData> m_cachedEntityData = {};
+	std::unordered_map<C_BaseEntity*, CachedEntityData> m_cachedEntityDataTemp = {};
+	int m_nLastRenderCacheFrame = -1;
 
 	bool IsHealthPack(C_BaseEntity* pEntity)
 	{
@@ -47,8 +62,9 @@ private:
 
 public:
 	void UpdateCache();
+	void UpdateRenderCache();
 	void UpdateModelIndexes();
-	void ClearCache();
+	void ClearCache(bool bClearAll = false);
 
 	void ClearModelIndexes()
 	{
@@ -57,6 +73,12 @@ public:
 	}
 
 	const std::vector<C_BaseEntity*>& GetGroup(const EEntGroup group) { return m_mapGroups[group]; }
+
+	const CachedEntityData* GetCachedData(C_BaseEntity* pEntity) const
+	{
+		auto it = m_cachedEntityData.find(pEntity);
+		return (it != m_cachedEntityData.end()) ? &it->second : nullptr;
+	}
 };
 
 MAKE_SINGLETON_SCOPED(CEntityHelper, Entities, H);

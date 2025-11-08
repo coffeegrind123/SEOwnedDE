@@ -9,9 +9,12 @@
 MAKE_HOOK(IBaseClientDLL_LevelShutdown, Memory::GetVFunc(I::BaseClientDLL, 7), void, __fastcall,
 	void* ecx)
 {
+	// Clear entity caches BEFORE original call to prevent accessing freed entities
+	// Pass true to clear both temp AND main buffers (prevents dangling pointers during transition)
+	H::Entities->ClearCache(true);
+
 	CALL_ORIGINAL(ecx);
 
-	H::Entities->ClearCache();
 	H::Entities->ClearModelIndexes();
 
 	F::Materials->CleanUp();

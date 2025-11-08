@@ -8,6 +8,9 @@ class CTeamWellBeing
 
 public:
 	void Run();
+	void RunImGui();
+private:
+	void DrawTeamWellBeingImGui();
 };
 
 MAKE_SINGLETON_SCOPED(CTeamWellBeing, TeamWellBeing, F);

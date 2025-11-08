@@ -7,28 +7,6 @@
 #include "../SpyCamera/SpyCamera.h"
 #include "../ProjectileSim/ProjectileSim.h"
 
-void CMiscVisuals::AimbotFOVCircle()
-{
-	if (I::EngineClient->IsTakingScreenshot())
-	{
-		return;
-	}
-
-	if (!CFG::Visuals_Aimbot_FOV_Circle
-		|| I::EngineVGui->IsGameUIVisible()
-		|| I::Input->CAM_IsThirdPerson())
-		return;
-
-	if (const auto pLocal = H::Entities->GetLocal())
-	{
-		if (const auto flAimFOV = G::flAimbotFOV)
-		{
-			const float flRadius = tanf(DEG2RAD(flAimFOV) / 2.0f) / tanf(DEG2RAD(static_cast<float>(pLocal->m_iFOV())) / 2.0f) * H::Draw->GetScreenW();
-			H::Draw->OutlinedCircle(H::Draw->GetScreenW() / 2, H::Draw->GetScreenH() / 2, static_cast<int>(flRadius), 70, {255, 255, 255, static_cast<byte>(255.0f * CFG::Visuals_Aimbot_FOV_Circle_Alpha)});
-		}
-	}
-}
-
 void CMiscVisuals::ViewModelSway()
 {
 	static ConVar* cl_wpn_sway_interp = I::CVar->FindVar("cl_wpn_sway_interp");
@@ -70,7 +48,40 @@ void CMiscVisuals::DetailProps()
 		r_drawdetailprops->SetValue(0);
 }
 
-void CMiscVisuals::ShiftBar()
+void CMiscVisuals::AimbotFOVCircleImGui()
+{
+	if (I::EngineClient->IsTakingScreenshot())
+	{
+		return;
+	}
+
+	if (!CFG::Visuals_Aimbot_FOV_Circle
+		|| I::EngineVGui->IsGameUIVisible()
+		|| I::Input->CAM_IsThirdPerson())
+		return;
+
+	// Set ImGui draw list
+	ImDrawList* drawList = ImGui::GetBackgroundDrawList();
+	H::DrawImGui->SetDrawList(drawList);
+
+	// Matrices updated once per frame in Present hook to prevent conflicts
+
+	DrawAimbotFOVCircleImGui();
+}
+
+void CMiscVisuals::DrawAimbotFOVCircleImGui()
+{
+	if (const auto pLocal = H::Entities->GetLocal())
+	{
+		if (const auto flAimFOV = G::flAimbotFOV)
+		{
+			const float flRadius = tanf(DEG2RAD(flAimFOV) / 2.0f) / tanf(DEG2RAD(static_cast<float>(pLocal->m_iFOV())) / 2.0f) * H::DrawImGui->GetScreenW();
+			H::DrawImGui->OutlinedCircle(H::DrawImGui->GetScreenW() / 2, H::DrawImGui->GetScreenH() / 2, static_cast<int>(flRadius), 70, {255, 255, 255, static_cast<byte>(255.0f * CFG::Visuals_Aimbot_FOV_Circle_Alpha)});
+		}
+	}
+}
+
+void CMiscVisuals::ShiftBarImGui()
 {
 	if (!CFG::Exploits_Shifting_Draw_Indicator)
 		return;
@@ -93,16 +104,29 @@ void CMiscVisuals::ShiftBar()
 	if (!pWeapon)
 		return;
 
+	// Set ImGui draw list
+	ImDrawList* drawList = ImGui::GetBackgroundDrawList();
+	H::DrawImGui->SetDrawList(drawList);
+
+	// Matrices updated once per frame in Present hook to prevent conflicts
+
+	DrawShiftBarImGui();
+}
+
+void CMiscVisuals::DrawShiftBarImGui()
+{
 	static int nBarW = 80;
 	static int nBarH = 4;
 
-	const int nBarX = (H::Draw->GetScreenW() / 2) - (nBarW / 2);
-	const int nBarY = (H::Draw->GetScreenH() / 2) + 100;
-	const int circleX = H::Draw->GetScreenW() / 2;
+	const int nBarX = (H::DrawImGui->GetScreenW() / 2) - (nBarW / 2);
+	const int nBarY = (H::DrawImGui->GetScreenH() / 2) + 100;
+	const int circleX = H::DrawImGui->GetScreenW() / 2;
+
+	const auto pWeaponForImGui = H::Entities->GetWeapon();
 
 	if (CFG::Exploits_Shifting_Indicator_Style == 0)
 	{
-		H::Draw->Rect(nBarX - 1, nBarY - 1, nBarW + 2, nBarH + 2, CFG::Menu_Background);
+		H::DrawImGui->Rect(nBarX - 1, nBarY - 1, nBarW + 2, nBarH + 2, CFG::Menu_Background);
 
 		if (Shifting::nAvailableTicks > 0)
 		{
@@ -115,8 +139,8 @@ void CMiscVisuals::ShiftBar()
 				0.0f, static_cast<float>(nBarW)
 			));
 
-			H::Draw->GradientRect(nBarX, nBarY, nFillWidth, nBarH, colorDim, color, false);
-			H::Draw->OutlinedRect(nBarX, nBarY, nFillWidth, nBarH, color);
+			H::DrawImGui->GradientRect(nBarX, nBarY, nFillWidth, nBarH, colorDim, color, false);
+			H::DrawImGui->OutlinedRect(nBarX, nBarY, nFillWidth, nBarH, color);
 		}
 	}
 
@@ -124,15 +148,15 @@ void CMiscVisuals::ShiftBar()
 	{
 		const float end{Math::RemapValClamped(static_cast<float>(Shifting::nAvailableTicks), 0.0f, MAX_COMMANDS, -90.0f, 359.0f)};
 
-		H::Draw->Arc(circleX, nBarY, 21, 6.0f, -90.0f, 359.0f, CFG::Menu_Background);
-		H::Draw->Arc(circleX, nBarY, 20, 4.0f, -90.0f, end, CFG::Menu_Accent_Secondary);
+		H::DrawImGui->Arc(circleX, nBarY, 21, 6.0f, -90.0f, 359.0f, CFG::Menu_Background);
+		H::DrawImGui->Arc(circleX, nBarY, 20, 4.0f, -90.0f, end, CFG::Menu_Accent_Secondary);
 	}
 
-	if (G::nTicksSinceCanFire < 30 && F::RapidFire->IsWeaponSupported(pWeapon))
+	if (G::nTicksSinceCanFire < 30 && pWeaponForImGui && F::RapidFire->IsWeaponSupported(pWeaponForImGui))
 	{
 		if (CFG::Exploits_Shifting_Indicator_Style == 0)
 		{
-			H::Draw->Rect(nBarX - 1, (nBarY + nBarH + 4) - 1, nBarW + 2, nBarH + 2, CFG::Menu_Background);
+			H::DrawImGui->Rect(nBarX - 1, (nBarY + nBarH + 4) - 1, nBarW + 2, nBarH + 2, CFG::Menu_Background);
 
 			if (G::nTicksSinceCanFire > 0)
 			{
@@ -145,8 +169,8 @@ void CMiscVisuals::ShiftBar()
 					0.0f, static_cast<float>(nBarW)
 				));
 
-				H::Draw->GradientRect(nBarX, nBarY + nBarH + 4, nFillWidth, nBarH, colorDim, color, false);
-				H::Draw->OutlinedRect(nBarX, nBarY + nBarH + 4, nFillWidth, nBarH, color);
+				H::DrawImGui->GradientRect(nBarX, nBarY + nBarH + 4, nFillWidth, nBarH, colorDim, color, false);
+				H::DrawImGui->OutlinedRect(nBarX, nBarY + nBarH + 4, nFillWidth, nBarH, color);
 			}
 		}
 
@@ -154,8 +178,39 @@ void CMiscVisuals::ShiftBar()
 		{
 			const float end{Math::RemapValClamped(static_cast<float>(G::nTicksSinceCanFire), 0.0f, 24.0f, -90.0f, 359.0f)};
 
-			H::Draw->Arc(circleX, nBarY, 24, 2.0f, -90.0f, 359.0f, CFG::Menu_Background);
-			H::Draw->Arc(circleX, nBarY, 24, 2.0f, -90.0f, end, {241, 196, 15, 255});
+			H::DrawImGui->Arc(circleX, nBarY, 24, 2.0f, -90.0f, 359.0f, CFG::Menu_Background);
+			H::DrawImGui->Arc(circleX, nBarY, 24, 2.0f, -90.0f, end, {241, 196, 15, 255});
+		}
+	}
+
+	if (G::nTicksSinceCanFire < 30 && pWeaponForImGui && F::RapidFire->IsWeaponSupported(pWeaponForImGui))
+	{
+		if (CFG::Exploits_Shifting_Indicator_Style == 0)
+		{
+			H::DrawImGui->Rect(nBarX - 1, (nBarY + nBarH + 4) - 1, nBarW + 2, nBarH + 2, CFG::Menu_Background);
+
+			if (G::nTicksSinceCanFire > 0)
+			{
+				constexpr Color_t color = {241, 196, 15, 255};
+				constexpr Color_t colorDim = {color.r, color.g, color.b, 25};
+
+				const int nFillWidth = static_cast<int>(Math::RemapValClamped(
+					static_cast<float>(G::nTicksSinceCanFire),
+					0.0f, 24.0f,
+					0.0f, static_cast<float>(nBarW)
+				));
+
+				H::DrawImGui->GradientRect(nBarX, nBarY + nBarH + 4, nFillWidth, nBarH, colorDim, color, false);
+				H::DrawImGui->OutlinedRect(nBarX, nBarY + nBarH + 4, nFillWidth, nBarH, color);
+			}
+		}
+
+		if (CFG::Exploits_Shifting_Indicator_Style == 1)
+		{
+			const float end{Math::RemapValClamped(static_cast<float>(G::nTicksSinceCanFire), 0.0f, 24.0f, -90.0f, 359.0f)};
+
+			H::DrawImGui->Arc(circleX, nBarY, 24, 2.0f, -90.0f, 359.0f, CFG::Menu_Background);
+			H::DrawImGui->Arc(circleX, nBarY, 24, 2.0f, -90.0f, end, {241, 196, 15, 255});
 		}
 	}
 }

@@ -27,6 +27,7 @@
 #include "TF2/iviewrender_beams.h"
 #include "TF2/vphysics.h"
 #include "TF2/renderutils.h"
+#include "TF2/ibasefilesystem.h"
 
 #include "TF2/keyvalues.h"
 #include "TF2/c_baseobject.h"
@@ -36,6 +37,7 @@
 #include "TF2/c_tf_player.h"
 
 #include "Helpers/Draw/Draw.h"
+#include "Helpers/Draw/DrawImGui.h"
 #include "Helpers/Entities/Entities.h"
 #include "Helpers/Fonts/Fonts.h"
 #include "Helpers/Input/Input.h"

@@ -17,20 +17,31 @@ MAKE_HOOK(IEngineVGuiInternal_Paint, Memory::GetVFunc(I::EngineVGui, 14), void, 
 
 	if (mode & PAINT_UIPANELS)
 	{
-		H::Draw->UpdateW2SMatrix();
+		// Matrix update now handled in Present hook to prevent double-update flicker
+		// H::Draw->UpdateW2SMatrix();
 
 		I::MatSystemSurface->StartDrawing();
 		{
-			F::ESP->Run();
-			F::TeamWellBeing->Run();
-			F::MiscVisuals->ShiftBar();
-			F::Radar->Run();
-			F::SpectatorList->Run();
-			F::MiscVisuals->AimbotFOVCircle();
+			// Handle menu input toggle (F3/INSERT key)
+			try {
+				F::Menu->Run();
+			}
+			catch (...) {
+				// If input handling crashes, just skip menu processing
+			}
+
+			// Menu and ESP rendering are now handled in basicHook Present hook (stream-proof)
+			// Other visual features still render here until converted to ImGui
+
+			// Run remaining visual features
+			// F::ESP->Run(); // Now handled by ImGui in Present hook
+			// F::TeamWellBeing->Run(); // Now handled by ImGui in Present hook
+			// F::Radar->Run(); // Now handled by ImGui in Present hook
+			// F::SpectatorList->Run(); // Now handled by ImGui in Present hook
+			// F::MiscVisuals->AimbotFOVCircle(); // Now handled by ImGui in Present hook
+			// F::SpyWarning->Run(); // Now handled by ImGui in Present hook
+			// F::SeedPred->Paint(); // Now handled by ImGui in Present hook
 			F::SpyCamera->Run();
-			F::SpyWarning->Run();
-			F::SeedPred->Paint();
-			F::Menu->Run();
 		}
 		I::MatSystemSurface->FinishDrawing();
 	}

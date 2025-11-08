@@ -17,7 +17,7 @@ namespace CFG
 	CFGVAR(Aimbot_Ignore_Taunting, false);
 
 	CFGVAR(Aimbot_Hitscan_Active, true);
-	CFGVAR(Aimbot_Hitscan_Target_LagRecords, true);
+	CFGVAR(Aimbot_Hitscan_Target_LagRecords, false);
 	CFGVAR(Aimbot_Hitscan_Target_Stickies, true);
 	CFGVAR(Aimbot_Hitscan_Aim_Type, 1); //0 Normal 1 Silent 2 Smooth
 	CFGVAR(Aimbot_Hitscan_Sort, 0); //0 FOV 1 Distance
@@ -53,7 +53,7 @@ namespace CFG
 
 	CFGVAR(Aimbot_Melee_Active, true);
 	CFGVAR(Aimbot_Melee_Always_Active, false);
-	CFGVAR(Aimbot_Melee_Target_LagRecords, true);
+	CFGVAR(Aimbot_Melee_Target_LagRecords, false);
 	CFGVAR(Aimbot_Melee_Aim_Type, 1); //0 Normal 1 Silent 2 Smooth
 	CFGVAR(Aimbot_Melee_Sort, 1); //0 FOV 1 Distance
 	CFGVAR(Aimbot_Melee_FOV, 45.0f);
@@ -137,7 +137,7 @@ namespace CFG
 	CFGVAR(ESP_Players_HealthBar, true);
 	CFGVAR(ESP_Players_Uber, false);
 	CFGVAR(ESP_Players_UberBar, true);
-	CFGVAR(ESP_Players_Box, false);
+	CFGVAR(ESP_Players_Box, true);
 	CFGVAR(ESP_Players_Tracer, false);
 	CFGVAR(ESP_Players_Bones, false);
 	CFGVAR(ESP_Players_Arrows, true);
@@ -155,7 +155,7 @@ namespace CFG
 	CFGVAR(ESP_Buildings_HealthBar, true);
 	CFGVAR(ESP_Buildings_Level, false);
 	CFGVAR(ESP_Buildings_LevelBar, false);
-	CFGVAR(ESP_Buildings_Box, false);
+	CFGVAR(ESP_Buildings_Box, true);
 	CFGVAR(ESP_Buildings_Tracer, false);
 	CFGVAR(ESP_Buildings_Conds, true);
 
@@ -221,7 +221,7 @@ namespace CFG
 	CFGVAR(Materials_Players_Ignore_Friends, false);
 	CFGVAR(Materials_Players_Ignore_Enemies, false);
 	CFGVAR(Materials_Players_Ignore_Teammates, true);
-	CFGVAR(Materials_Players_Ignore_LagRecords, false);
+	CFGVAR(Materials_Players_Ignore_LagRecords, true);
 	CFGVAR(Materials_Players_Show_Teammate_Medics, false);
 	CFGVAR(Materials_Players_LagRecords_Style, 1); //0 All 1 Last Only
 
@@ -313,8 +313,8 @@ namespace CFG
 	CFGVAR(Visuals_ViewModel_Offset_Up, 0.0f);
 
 	CFGVAR(Visuals_Flat_Textures, false);
-	CFGVAR(Visuals_Remove_Fog, true);
-	CFGVAR(Visuals_Remove_Sky_Fog, true);
+	CFGVAR(Visuals_Remove_Fog, false);
+	CFGVAR(Visuals_Remove_Sky_Fog, false);
 	CFGVAR(Visuals_Night_Mode, 50.0f);
 	CFGVAR(Visuals_World_Modulation_Mode, 0); //0 Night 1 Custom Colors
 	CFGVAR(Visuals_World_Modulation_No_Sky_Change, false);
@@ -407,7 +407,7 @@ namespace CFG
 	CFGVAR(Misc_Taunt_Spin_Key, 0);
 	CFGVAR(Misc_Taunt_Spin_Speed, 12.0f);
 	CFGVAR(Misc_Taunt_Spin_Sine, false);
-	CFGVAR_NOSAVE(Misc_Accuracy_Improvements, true);
+	CFGVAR_NOSAVE(Misc_Accuracy_Improvements, false);
 	CFGVAR(Misc_Pure_Bypass, true);
 	CFGVAR(Misc_NoiseMaker_Spam, false);
 	CFGVAR(Misc_No_Push, true);
@@ -415,7 +415,7 @@ namespace CFG
 	CFGVAR(Misc_Fake_Taunt, false);
 	CFGVAR(Misc_Ping_Reducer, true);
 	CFGVAR(Misc_Pred_Error_Jitter_Fix, true);
-	CFGVAR(Misc_SetupBones_Optimization, true);
+	CFGVAR(Misc_SetupBones_Optimization, false);
 	CFGVAR(Misc_ComputeLightingOrigin_Fix, true);
 	CFGVAR(Misc_Equip_Region_Unlock, true);
 	CFGVAR(Misc_Fast_Stop, false);

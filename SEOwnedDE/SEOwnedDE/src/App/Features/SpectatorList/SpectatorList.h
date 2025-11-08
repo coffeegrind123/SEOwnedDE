@@ -17,6 +17,9 @@ class CSpectatorList
 
 public:
 	void Run();
+	void RunImGui();
+private:
+	void DrawSpectatorListImGui();
 };
 
 MAKE_SINGLETON_SCOPED(CSpectatorList, SpectatorList, F);

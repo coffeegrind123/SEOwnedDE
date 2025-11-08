@@ -14,6 +14,7 @@ public:
 
 	int CreateTextureFromArray(const unsigned char* rgba, int w, int h);
 	int CreateTextureFromVTF(const char* name);
+	const char* GetTextureNameFromID(int id);
 
 	int GetClassIcon(int nClassNum);
 	int GetBuildingTextureId(C_BaseObject* pObject);

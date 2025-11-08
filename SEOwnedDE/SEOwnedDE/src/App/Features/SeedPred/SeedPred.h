@@ -21,6 +21,9 @@ public:
 	void Reset();
 	void AdjustAngles(CUserCmd* cmd);
 	void Paint();
+	void PaintImGui();
+private:
+	void DrawSeedPredImGui();
 };
 
 MAKE_SINGLETON_SCOPED(CSeedPred, SeedPred, F);

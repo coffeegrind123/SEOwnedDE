@@ -186,3 +186,126 @@ void CSpectatorList::Run()
 		);
 	}
 }
+
+void CSpectatorList::RunImGui()
+{
+	if (!CFG::Visuals_SpectatorList_Active)
+		return;
+
+	// Anti screenshot?
+	if (CFG::Misc_Clean_Screenshot && I::EngineClient->IsTakingScreenshot())
+	{
+		return;
+	}
+
+	// In menu?
+	if (!F::Menu->IsOpen() && (I::EngineVGui->IsGameUIVisible() || SDKUtils::BInEndOfMatch()))
+		return;
+
+	if (F::Menu->IsOpen())
+		Drag();
+
+	// Set ImGui draw list - use background to render behind menu
+	ImDrawList* drawList = ImGui::GetBackgroundDrawList();
+	H::DrawImGui->SetDrawList(drawList);
+
+	// Matrices updated once per frame in Present hook to prevent conflicts
+
+	DrawSpectatorListImGui();
+}
+
+void CSpectatorList::DrawSpectatorListImGui()
+{
+	const auto outlineColor = F::VisualUtils->GetAlphaColor(CFG::Menu_Accent_Secondary, CFG::Visuals_SpectatorList_Outline_Alpha);
+	const auto bgColor = F::VisualUtils->GetAlphaColor(CFG::Menu_Background, CFG::Visuals_SpectatorList_Background_Alpha);
+
+	// Background
+	H::DrawImGui->Rect(
+		CFG::Visuals_SpectatorList_Pos_X,
+		CFG::Visuals_SpectatorList_Pos_Y,
+		LIST_WIDTH,
+		CFG::Menu_Drag_Bar_Height,
+		bgColor
+	);
+
+	// Title
+	H::DrawImGui->String(
+		H::Fonts->Get(EFonts::Menu),
+		CFG::Visuals_SpectatorList_Pos_X + (LIST_WIDTH / 2),
+		CFG::Visuals_SpectatorList_Pos_Y + (CFG::Menu_Drag_Bar_Height / 2),
+		CFG::Menu_Text,
+		POS_CENTERXY,
+		"Spectators"
+	);
+
+	// Outline
+	H::DrawImGui->OutlinedRect(
+		CFG::Visuals_SpectatorList_Pos_X,
+		CFG::Visuals_SpectatorList_Pos_Y,
+		LIST_WIDTH,
+		CFG::Menu_Drag_Bar_Height,
+		outlineColor
+	);
+
+	// Are there any spectators?
+	if (!GetSpectators())
+		return;
+
+	for (size_t n = 0; n < m_vecSpectators.size(); n++)
+	{
+		const auto& spectator = m_vecSpectators[n];
+
+		const int iPos = int(n) + 1;
+
+		// Background
+		H::DrawImGui->Rect(
+			CFG::Visuals_SpectatorList_Pos_X,
+			CFG::Visuals_SpectatorList_Pos_Y + (CFG::Menu_Drag_Bar_Height * iPos) - 1,
+			LIST_WIDTH,
+			CFG::Menu_Drag_Bar_Height + 1,
+			bgColor
+		);
+
+		const int nModeX = CFG::Visuals_SpectatorList_Pos_X;
+		const int nModeOffsetX = LIST_WIDTH / 8;
+		const int nTextY = CFG::Visuals_SpectatorList_Pos_Y + (CFG::Menu_Drag_Bar_Height * iPos) - 1;
+		const int nTextX = nModeX + nModeOffsetX + CFG::Menu_Spacing_X;
+		const int nY = CFG::Visuals_SpectatorList_Pos_Y + (CFG::Menu_Drag_Bar_Height * iPos) - 1;
+
+		// Divider
+		H::DrawImGui->Line(nModeX + nModeOffsetX, nY, nModeX + nModeOffsetX, nY + CFG::Menu_Drag_Bar_Height, outlineColor);
+
+		// Spectator mode
+		H::DrawImGui->String(
+			H::Fonts->Get(EFonts::Menu),
+			nModeX + (nModeOffsetX / 2),
+			nTextY + (CFG::Menu_Drag_Bar_Height / 2) + 1,
+			CFG::Menu_Text_Inactive,
+			POS_CENTERXY,
+			spectator.m_nMode == OBS_MODE_IN_EYE ? "1st" : "3rd"
+		);
+
+		H::DrawImGui->StartClipping(nTextX, nTextY, (nModeX + LIST_WIDTH) - (CFG::Menu_Spacing_X + 1), nTextY + CFG::Menu_Drag_Bar_Height);
+
+		// Player name
+		H::DrawImGui->String(
+			H::Fonts->Get(EFonts::Menu),
+			nTextX,
+			nTextY + (CFG::Menu_Drag_Bar_Height / 2) + 1,
+			CFG::Menu_Text_Inactive,
+			POS_CENTERY,
+			spectator.Name.c_str()
+		);
+
+		H::DrawImGui->EndClipping();
+
+		// Outline
+		H::DrawImGui->OutlinedRect(
+			CFG::Visuals_SpectatorList_Pos_X,
+			CFG::Visuals_SpectatorList_Pos_Y + (CFG::Menu_Drag_Bar_Height * iPos) - 1,
+			LIST_WIDTH,
+			CFG::Menu_Drag_Bar_Height + 1,
+			outlineColor
+		);
+	}
+}

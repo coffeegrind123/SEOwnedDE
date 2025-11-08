@@ -1,2867 +1,1584 @@
 #include "Menu.h"
-
-#include "LateRenderer/LateRenderer.h"
+#include "imguiHook.h"
 
 #include "../CFG.h"
 #include "../VisualUtils/VisualUtils.h"
 #include "../Players/Players.h"
+#include "../../../Utils/Utils.h"
+#include <Windows.h>
+#include <filesystem>
 
-#define multiselect(label, unique, ...) static std::vector<std::pair<const char *, bool &>> unique##multiselect = __VA_ARGS__; \
-SelectMulti(label, unique##multiselect)
-
-void CMenu::Drag(int &x, int &y, int w, int h, int offset_y)
+void CMenu::Initialize(IDirect3DDevice9* pDevice)
 {
-	static POINT delta = {};
-	static bool drag = false;
-	static bool move = false;
+    if (m_bInitialized)
+        return;
 
-	static bool held = false;
+    m_pDevice = pDevice;
 
-	if (!H::Input->IsPressed(VK_LBUTTON) && !H::Input->IsHeld(VK_LBUTTON))
-		held = false;
+    static ImVec2 windowSize = { static_cast<float>(CFG::Menu_Width), static_cast<float>(CFG::Menu_Height) };
+    static ImVec2 windowPos = { static_cast<float>(CFG::Menu_Pos_X), static_cast<float>(CFG::Menu_Pos_Y) };
+    m_vWindowSize = &windowSize;
+    m_vWindowPos = &windowPos;
 
-	int mousex = H::Input->GetMouseX();
-	int mousey = H::Input->GetMouseY();
+    HWND hWnd = SDKUtils::GetTeamFortressWindow();
+    if (!hWnd)
+    {
+        m_bInitialized = true;
+        return;
+    }
 
-	if ((mousex > x && mousex < x + w && mousey > y - offset_y && mousey < y - offset_y + h) && (held || H::Input->IsPressed(VK_LBUTTON)))
-	{
-		held = true;
-		drag = true;
+    if (ImGui::GetCurrentContext() != nullptr)
+    {
+        m_bImGuiContextCreated = true;
+    }
+    else if (pDevice)
+    {
+        try {
+            imguiHook::InitializeImgui(pDevice);
+            m_bImGuiContextCreated = (ImGui::GetCurrentContext() != nullptr);
+        }
+        catch (...) {
+            m_bImGuiContextCreated = false;
+        }
+    }
 
-		if (!move)
-		{
-			delta.x = mousex - x;
-			delta.y = mousey - y;
-			move = true;
-		}
-	}
-
-	if (drag)
-	{
-		x = mousex - delta.x;
-		y = mousey - delta.y;
-	}
-
-	if (!held)
-	{
-		drag = false;
-		move = false;
-	}
+    m_bInitialized = true;
 }
 
-bool CMenu::IsHovered(int x, int y, int w, int h, void *pVar, bool bStrict)
+void CMenu::Shutdown()
 {
-	//this is pretty ok to use but like.. it can have annoying visual bugs with clicks..
-	/*if (H::Input->IsHeld(VK_LBUTTON))
-		return false;*/
+    if (!m_bInitialized)
+        return;
 
-	if (pVar == nullptr)
-	{
-		for (const auto &State : m_mapStates)
-		{
-			if (State.second)
-				return false;
-		}
-	}
+    // Restore system cursor if menu was open
+    if (m_bOpen) {
+        ImGui::GetIO().MouseDrawCursor = false;
 
-	else
-	{
-		for (const auto &State : m_mapStates)
-		{
-			if (State.second && State.first != pVar)
-				return false;
-		}
-	}
+        // Force show system cursor (handle reference counting)
+        while (::ShowCursor(TRUE) < 0) {}  // Keep calling until cursor is visible
 
-	int mx = H::Input->GetMouseX();
-	int my = H::Input->GetMouseY();
+        m_bOpen = false;
+    }
 
-	if (bStrict)
-	{
-		bool bLeft = mx >= x;
-		bool bRight = mx <= x + w;
-		bool bTop = my >= y;
-		bool bBottom = my <= y + h;
+    // Shutdown ImGui if context was created
+    if (m_bImGuiContextCreated && ImGui::GetCurrentContext())
+    {
+        ImGui_ImplDX9_Shutdown();
+        ImGui_ImplWin32_Shutdown();
+        ImGui::DestroyContext();
+        m_bImGuiContextCreated = false;
+    }
 
-		return bLeft && bRight && bTop && bBottom;
-	}
-
-	else
-	{
-		bool bLeft = mx > x;
-		bool bRight = mx < x + w;
-		bool bTop = my > y;
-		bool bBottom = my < y + h;
-
-		return bLeft && bRight && bTop && bBottom;
-	}
+    m_bInitialized = false;
 }
 
-bool CMenu::IsHoveredSimple(int x, int y, int w, int h)
+std::string CMenu::GetKeyName(int nKey)
 {
-	int mx = H::Input->GetMouseX();
-	int my = H::Input->GetMouseY();
+    switch (nKey)
+    {
+        case VK_LBUTTON: return "LButton";
+        case VK_RBUTTON: return "RButton";
+        case VK_MBUTTON: return "MButton";
+        case VK_XBUTTON1: return "XButton1";
+        case VK_XBUTTON2: return "XButton2";
+        case VK_NUMPAD0: return "NumPad0";
+        case VK_NUMPAD1: return "NumPad1";
+        case VK_NUMPAD2: return "NumPad2";
+        case VK_NUMPAD3: return "NumPad3";
+        case VK_NUMPAD4: return "NumPad4";
+        case VK_NUMPAD5: return "NumPad5";
+        case VK_NUMPAD6: return "NumPad6";
+        case VK_NUMPAD7: return "NumPad7";
+        case VK_NUMPAD8: return "NumPad8";
+        case VK_NUMPAD9: return "NumPad9";
+        case VK_MENU: return "Alt";
+        case VK_CAPITAL: return "Caps Lock";
+        case 0x0: return "None";
+        default: break;
+    }
 
-	bool bLeft = mx >= x;
-	bool bRight = mx <= x + w;
-	bool bTop = my >= y;
-	bool bBottom = my <= y + h;
+    CHAR output[16] = { "\0" };
+    if (const int result = GetKeyNameTextA(MapVirtualKeyW(nKey, MAPVK_VK_TO_VSC) << 16, output, 16))
+        return output;
 
-	return bLeft && bRight && bTop && bBottom;
+    return "Unknown";
 }
 
-void CMenu::GroupBoxStart(const char *szLabel, int nWidth)
+bool CMenu::InputKey(const char* szLabel, int& nKeyOut)
 {
-	m_nCursorY += CFG::Menu_Spacing_Y * 2; //hmm
+    ImGui::PushID(szLabel);
 
-	m_nLastGroupBoxY = m_nCursorY;
-	m_nLastGroupBoxW = nWidth;
+    std::string keyName = GetKeyName(nKeyOut);
+    std::string buttonText = keyName + "##" + szLabel;
 
-	int x = m_nCursorX;
-	int y = m_nCursorY;
-	int w = nWidth;
+    bool bChanged = false;
+    if (ImGui::Button(buttonText.c_str(), { 100, 0 }))
+    {
+        ImGui::OpenPopup(szLabel);
+        m_bInKeybind = true;
+    }
 
-	int nTextW = [&]() -> int {
-		int w_out = 0, h_out = 0;
-		I::MatSystemSurface->GetTextSize(H::Fonts->Get(EFonts::Menu).m_dwFont, Utils::ConvertUtf8ToWide(szLabel).c_str(), w_out, h_out);
-		return w_out;
-	}();
+    ImGui::SameLine();
+    ImGui::Text(szLabel);
 
-	int nWidthRemaining = w - (nTextW + (CFG::Menu_Spacing_X * 4));
-	int nSideWidth = nWidthRemaining / 2;
+    KeybindPopup(szLabel, nKeyOut);
 
-	H::Draw->Line(x, y, x + nSideWidth, y, CFG::Menu_Accent_Primary);
-	H::Draw->Line(x + w, y, x + (w - nSideWidth), y, CFG::Menu_Accent_Primary);
-
-	H::Draw->String(
-		H::Fonts->Get(EFonts::Menu),
-		x + (w / 2), y - (CFG::Menu_Spacing_Y - 1), CFG::Menu_Text_Inactive, POS_CENTERXY, szLabel
-	);
-
-	m_nCursorX += CFG::Menu_Spacing_X * 2;
-	m_nCursorY += CFG::Menu_Spacing_Y * 2;
+    ImGui::PopID();
+    return bChanged;
 }
 
-void CMenu::GroupBoxEnd()
+void CMenu::KeybindPopup(const char* szLabel, int& nKeyOut)
 {
-	m_nCursorX -= (CFG::Menu_Spacing_X * 2);
-	m_nCursorY += 2;
+    if (ImGui::BeginPopup(szLabel))
+    {
+        ImGui::Text("Press any key...");
 
-	Color_t clr = CFG::Menu_Accent_Primary;
+        bool bKeySet = false;
+        for (int n = 0; n < 256; n++)
+        {
+            bool bMouse = (n > 0x0 && n < 0x7);
+            bool bLetter = (n > L'A' - 1 && n < L'Z' + 1);
+            bool bAllowed = (n == VK_LSHIFT || n == VK_RSHIFT || n == VK_SHIFT || n == VK_ESCAPE || n == VK_INSERT || n == VK_F3 || n == VK_MENU || n == VK_CAPITAL || n == VK_SPACE || n == VK_CONTROL);
+            bool bNumPad = n > (VK_NUMPAD0 - 1) && n < (VK_NUMPAD9)+1;
 
-	H::Draw->Line(m_nCursorX, m_nLastGroupBoxY, m_nCursorX, m_nCursorY, clr);
-	H::Draw->Line(m_nCursorX + m_nLastGroupBoxW, m_nLastGroupBoxY, m_nCursorX + m_nLastGroupBoxW, m_nCursorY, clr);
-	H::Draw->Line(m_nCursorX, m_nCursorY, m_nCursorX + m_nLastGroupBoxW, m_nCursorY, clr);
+            if (bMouse || bLetter || bAllowed || bNumPad)
+            {
+                if (H::Input->IsPressed(n))
+                {
+                    if (n == VK_INSERT || n == VK_F3) {
+                        ImGui::CloseCurrentPopup();
+                        break;
+                    }
+                    else if (n == VK_ESCAPE) {
+                        nKeyOut = 0x0;
+                        ImGui::CloseCurrentPopup();
+                        break;
+                    }
+                    else {
+                        nKeyOut = n;
+                        ImGui::CloseCurrentPopup();
+                        bKeySet = true;
+                        break;
+                    }
+                }
+            }
+        }
 
-	m_nCursorY += CFG::Menu_Spacing_Y;
+        if (!bKeySet && H::Input->IsPressed(VK_ESCAPE))
+        {
+            ImGui::CloseCurrentPopup();
+        }
+
+        ImGui::EndPopup();
+    }
+    else
+    {
+        m_bInKeybind = false;
+    }
 }
 
-bool CMenu::CheckBox(const char *szLabel, bool &bVar)
+void CMenu::RenderAimTab()
 {
-	bool bCallback = false;
+    if (ImGui::BeginTabItem("Aim"))
+    {
+        static int aimSubTab = 0;
+        const char* aimSubTabs[] = { "Aimbot", "Triggerbot" };
 
-	int x = m_nCursorX;
-	int y = m_nCursorY;
-	int w = CFG::Menu_CheckBox_Width;
-	int h = CFG::Menu_CheckBox_Height;
+        if (ImGui::BeginTabBar("AimSubTabs"))
+        {
+            if (ImGui::BeginTabItem("Aimbot"))
+            {
+                RenderAimbotTab();
+                ImGui::EndTabItem();
+            }
 
-	int w_with_text = [&]() -> int {
-		int w_out = 0, h_out = 0;
-		I::MatSystemSurface->GetTextSize(H::Fonts->Get(EFonts::Menu).m_dwFont, Utils::ConvertUtf8ToWide(szLabel).c_str(), w_out, h_out);
-		return w + w_out + 1;
-	}();
+            if (ImGui::BeginTabItem("Triggerbot"))
+            {
+                RenderTriggerbotTab();
+                ImGui::EndTabItem();
+            }
 
-	bool bHovered = IsHovered(x, y, w_with_text, h, &bVar);
+            ImGui::EndTabBar();
+        }
 
-	if (bHovered && H::Input->IsPressed(VK_LBUTTON) && !m_bClickConsumed) {
-		bCallback = m_bClickConsumed = true;
-		bVar = !bVar;
-	}
-
-	if (bVar) {
-		Color_t clr = CFG::Menu_Accent_Primary;
-		H::Draw->GradientRect(x, y, w, h, { clr.r, clr.g, clr.b, 25 }, clr, false);
-	}
-
-	H::Draw->OutlinedRect(
-		x, y, w, h, CFG::Menu_Accent_Primary
-	);
-
-	H::Draw->String(
-		H::Fonts->Get(EFonts::Menu),
-		x + w + CFG::Menu_Spacing_X,
-		y + (h / 2),
-		(bHovered) ? CFG::Menu_Text_Active : CFG::Menu_Text_Inactive,
-		POS_CENTERY,
-		szLabel
-	);
-
-	m_nCursorY += h + CFG::Menu_Spacing_Y;
-
-	return bCallback;
+        ImGui::EndTabItem();
+    }
 }
 
-bool CMenu::SliderFloat(const char *szLabel, float &flVar, float flMin, float flMax, float flStep, const char *szFormat)
+void CMenu::RenderAimbotTab()
 {
-	bool bCallback = false;
+    // Global
+    if (ImGui::CollapsingHeader("Global##Aimbot", ImGuiTreeNodeFlags_DefaultOpen))
+    {
+        ImGui::Checkbox("Active##Aimbot", &CFG::Aimbot_Active);
+        ImGui::Checkbox("Auto Shoot", &CFG::Aimbot_AutoShoot);
+        InputKey("Key", CFG::Aimbot_Key);
 
-	int x = m_nCursorX;
-	int y = m_nCursorY;
-	int w = CFG::Menu_Slider_Width;
-	int h = CFG::Menu_Slider_Height;
+        // Targets
+        ImGui::Text("Targets:");
+        ImGui::Checkbox("Players##Aimbot", &CFG::Aimbot_Target_Players);
+        ImGui::SameLine();
+        ImGui::Checkbox("Buildings##Aimbot", &CFG::Aimbot_Target_Buildings);
 
-	int nTextH = H::Fonts->Get(EFonts::Menu).m_nTall;
+        // Ignore
+        ImGui::Text("Ignore:");
+        ImGui::Checkbox("Friends##Aimbot", &CFG::Aimbot_Ignore_Friends);
+        ImGui::SameLine();
+        ImGui::Checkbox("Invisible##Aimbot", &CFG::Aimbot_Ignore_Invisible);
+        ImGui::SameLine();
+        ImGui::Checkbox("Invulnerable##Aimbot", &CFG::Aimbot_Ignore_Invulnerable);
+        ImGui::SameLine();
+        ImGui::Checkbox("Taunting", &CFG::Aimbot_Ignore_Taunting);
+    }
 
-	bool bHovered = IsHovered(x, y + (nTextH + CFG::Menu_Spacing_Y), w, h, &flVar, true);
+    // Melee
+    if (ImGui::CollapsingHeader("Melee", ImGuiTreeNodeFlags_DefaultOpen))
+    {
+        ImGui::Checkbox("Active##AimbotMelee", &CFG::Aimbot_Melee_Active);
+        ImGui::Checkbox("Always Active", &CFG::Aimbot_Melee_Always_Active);
+        ImGui::Checkbox("Target Lag Records##Melee", &CFG::Aimbot_Melee_Target_LagRecords);
+        ImGui::Checkbox("Predict Swing", &CFG::Aimbot_Melee_Predict_Swing);
+        ImGui::Checkbox("Walk To Target", &CFG::Aimbot_Melee_Walk_To_Target);
+        ImGui::Checkbox("Whip Teammates", &CFG::Aimbot_Melee_Whip_Teammates);
 
-	bool bAcceptsInput = [&]() -> bool
-	{
-		for (const auto &State : m_mapStates)
-		{
-			if (State.second && State.first != &flVar)
-				return false;
-		}
+        // Aim Type
+        const char* aimTypes[] = { "Normal", "Silent", "Smooth" };
+        ImGui::Combo("Aim Type##Melee", &CFG::Aimbot_Melee_Aim_Type, aimTypes, IM_ARRAYSIZE(aimTypes));
 
-		return true;
-	}();
+        // Sort
+        const char* sortTypes[] = { "FOV", "Distance" };
+        ImGui::Combo("Sort##Melee", &CFG::Aimbot_Melee_Sort, sortTypes, IM_ARRAYSIZE(sortTypes));
 
-	if (!m_bClickConsumed && bAcceptsInput)
-	{
-		if (H::Input->IsPressed(VK_RBUTTON))
-		{
-			if (bHovered)
-			{
-				bool bLeftSideHovered = IsHovered(x, y + (nTextH + CFG::Menu_Spacing_Y), w / 2, h, &flVar, true);
+        ImGui::SliderFloat("FOV##Melee", &CFG::Aimbot_Melee_FOV, 1.0f, 180.0f, "%.0f");
+        ImGui::SliderFloat("Smoothing##Melee", &CFG::Aimbot_Melee_Smoothing, 0.0f, 20.0f, "%.1f");
+        ImGui::SliderFloat("Predict Swing Time", &CFG::Aimbot_Melee_Predict_Swing_Amount, 0.1f, 0.2f, "%.2f");
+    }
 
-				if (bLeftSideHovered)
-					flVar -= flStep;
+    // Hitscan
+    if (ImGui::CollapsingHeader("Hitscan", ImGuiTreeNodeFlags_DefaultOpen))
+    {
+        ImGui::Checkbox("Active##AimbotHitscan", &CFG::Aimbot_Hitscan_Active);
+        ImGui::Checkbox("Target Lag Records##Hitscan", &CFG::Aimbot_Hitscan_Target_LagRecords);
+        ImGui::Checkbox("Target Stickies", &CFG::Aimbot_Hitscan_Target_Stickies);
+        ImGui::Checkbox("Smooth Auto Shoot", &CFG::Aimbot_Hitscan_Advanced_Smooth_AutoShoot);
+        ImGui::Checkbox("Auto Scope", &CFG::Aimbot_Hitscan_Auto_Scope);
+        ImGui::Checkbox("Wait For Headshot", &CFG::Aimbot_Hitscan_Wait_For_Headshot);
+        ImGui::Checkbox("Wait For Charge", &CFG::Aimbot_Hitscan_Wait_For_Charge);
+        ImGui::Checkbox("Minigun Tapfire", &CFG::Aimbot_Hitscan_Minigun_TapFire);
 
-				else flVar += flStep;
-			}
-		}
+        // Aim Type
+        const char* aimTypes[] = { "Normal", "Silent", "Smooth" };
+        ImGui::Combo("Aim Type##Hitscan", &CFG::Aimbot_Hitscan_Aim_Type, aimTypes, IM_ARRAYSIZE(aimTypes));
 
-		if (H::Input->IsPressed(VK_LBUTTON))
-		{
-			if (bHovered) {
-				m_bClickConsumed = true;
-				m_mapStates[&flVar] = true;
-			}
-		}
+        // Hitbox
+        const char* hitboxes[] = { "Head", "Body", "Auto" };
+        ImGui::Combo("Hitbox", &CFG::Aimbot_Hitscan_Hitbox, hitboxes, IM_ARRAYSIZE(hitboxes));
 
-		else
-		{
-			if (!H::Input->IsHeld(VK_LBUTTON))
-				m_mapStates[&flVar] = false;
-		}
-	}
+        // Sort
+        const char* sortTypes[] = { "FOV", "Distance" };
+        ImGui::Combo("Sort##Hitscan", &CFG::Aimbot_Hitscan_Sort, sortTypes, IM_ARRAYSIZE(sortTypes));
 
-	if (m_mapStates[&flVar])
-	{
-		flVar = Math::RemapValClamped(
-			static_cast<float>(H::Input->GetMouseX()),
-			static_cast<float>(x), static_cast<float>(x + w),
-			flMin, flMax
-		);
-	}
+        // Scan
+        ImGui::Text("Scan:");
+        ImGui::Checkbox("Head", &CFG::Aimbot_Hitscan_Scan_Head);
+        ImGui::SameLine();
+        ImGui::Checkbox("Body", &CFG::Aimbot_Hitscan_Scan_Body);
+        ImGui::SameLine();
+        ImGui::Checkbox("Arms", &CFG::Aimbot_Hitscan_Scan_Arms);
+        ImGui::SameLine();
+        ImGui::Checkbox("Legs", &CFG::Aimbot_Hitscan_Scan_Legs);
+        ImGui::Checkbox("Buildings##Hitscan", &CFG::Aimbot_Hitscan_Scan_Buildings);
 
-	if (flVar < 0.0f)
-		flVar = flVar - fmodf((flVar - flStep / 2.0f), flStep) - flStep / 2.0f;
+        ImGui::SliderFloat("FOV##Hitscan", &CFG::Aimbot_Hitscan_FOV, 1.0f, 180.0f, "%.0f");
+        ImGui::SliderFloat("Smoothing##Hitscan", &CFG::Aimbot_Hitscan_Smoothing, 0.0f, 20.0f, "%.1f");
+    }
 
-	else flVar = flVar - fmodf((flVar + flStep / 2.0f), flStep) + flStep / 2.0f;
+    // Projectile
+    if (ImGui::CollapsingHeader("Projectile", ImGuiTreeNodeFlags_DefaultOpen))
+    {
+        ImGui::Checkbox("Active##AimbotProjectile", &CFG::Aimbot_Projectile_Active);
+        ImGui::Checkbox("No Spread", &CFG::Aimbot_Projectile_NoSpread);
+        ImGui::Checkbox("Auto Double Donk", &CFG::Aimbot_Projectile_Auto_Double_Donk);
+        ImGui::Checkbox("Advanced Head Aim", &CFG::Aimbot_Projectile_Advanced_Head_Aim);
+        ImGui::Checkbox("Ground Strafe Prediction", &CFG::Aimbot_Projectile_Ground_Strafe_Prediction);
+        ImGui::Checkbox("Air Strafe Prediction", &CFG::Aimbot_Projectile_Air_Strafe_Prediction);
+        ImGui::Checkbox("BBOX Multipoint", &CFG::Aimbot_Projectile_BBOX_Multipoint);
 
-	flVar = static_cast<float>(static_cast<int>(flVar * 100.0f + 0.5f)) / 100.0f;
-	flVar = std::clamp(flVar, flMin, flMax);
+        // Rocket Splash
+        const char* rocketSplash[] = { "Disabled", "Enabled", "Preferred" };
+        ImGui::Combo("Rocket Splash", &CFG::Aimbot_Projectile_Rocket_Splash, rocketSplash, IM_ARRAYSIZE(rocketSplash));
 
-	int nFillWidth = static_cast<int>(Math::RemapValClamped(
-		flVar,
-		flMin, flMax,
-		0.0f, static_cast<float>(w)
-	));
+        // Aim Type
+        const char* aimTypes[] = { "Normal", "Silent" };
+        ImGui::Combo("Aim Type##Projectile", &CFG::Aimbot_Projectile_Aim_Type, aimTypes, IM_ARRAYSIZE(aimTypes));
 
-	H::Draw->String(
-		H::Fonts->Get(EFonts::Menu),
-		x, y,
-		(bHovered || m_mapStates[&flVar]) ? CFG::Menu_Text_Active : CFG::Menu_Text_Inactive,
-		POS_DEFAULT,
-		szLabel
-	);
+        // Aim Position
+        const char* aimPositions[] = { "Feet", "Body", "Head", "Auto" };
+        ImGui::Combo("Aim Position", &CFG::Aimbot_Projectile_Aim_Position, aimPositions, IM_ARRAYSIZE(aimPositions));
 
-	Color_t clr = CFG::Menu_Accent_Primary;
-	Color_t clr_dim = { clr.r, clr.g, clr.b, 25 };
+        // Sort
+        const char* sortTypes[] = { "FOV", "Distance" };
+        ImGui::Combo("Sort##Projectile", &CFG::Aimbot_Projectile_Sort, sortTypes, IM_ARRAYSIZE(sortTypes));
 
-	H::Draw->Rect(x, y + (nTextH + CFG::Menu_Spacing_Y), w, h, clr_dim);
-	H::Draw->GradientRect(x, y + (nTextH + CFG::Menu_Spacing_Y), nFillWidth, h, clr_dim, clr, false);
-	H::Draw->OutlinedRect(x, y + (nTextH + CFG::Menu_Spacing_Y), nFillWidth, h, clr);
-	H::Draw->Rect(x + (nFillWidth - 1), y + (nTextH + CFG::Menu_Spacing_Y) - 1, 2, h + 2, CFG::Menu_Text_Active);
+        // Prediction Method
+        const char* predictionMethods[] = { "Full Acceleration", "Current Velocity" };
+        ImGui::Combo("Prediction Method", &CFG::Aimbot_Projectile_Aim_Prediction_Method, predictionMethods, IM_ARRAYSIZE(predictionMethods));
 
-	H::Draw->String(
-		H::Fonts->Get(EFonts::Menu),
-		x + (w + CFG::Menu_Spacing_X),
-		y + (nTextH - 1),
-		(bHovered || m_mapStates[&flVar]) ? CFG::Menu_Text_Active : CFG::Menu_Text_Inactive,
-		POS_DEFAULT,
-		szFormat, flVar
-	);
-
-	m_nCursorY += h + nTextH + CFG::Menu_Spacing_Y + CFG::Menu_Spacing_Y + 2; //+ 2 for the little white thingy
-
-	return bCallback;
+        ImGui::SliderFloat("FOV##Projectile", &CFG::Aimbot_Projectile_FOV, 1.0f, 180.0f, "%.0f");
+        ImGui::SliderFloat("Max Simulation Time", &CFG::Aimbot_Projectile_Max_Simulation_Time, 1.0f, 5.0f, "%.1fs");
+        ImGui::SliderInt("Max Targets", &CFG::Aimbot_Projectile_Max_Processing_Targets, 1, 6);
+    }
 }
 
-bool CMenu::SliderInt(const char *szLabel, int &nVar, int nMin, int nMax, int nStep)
+void CMenu::RenderTriggerbotTab()
 {
-	bool bCallback = false;
+    // Global
+    if (ImGui::CollapsingHeader("Global##Aimbot", ImGuiTreeNodeFlags_DefaultOpen))
+    {
+        ImGui::Checkbox("Active##Triggerbot", &CFG::Triggerbot_Active);
+        InputKey("Key", CFG::Triggerbot_Key);
+    }
 
-	int x = m_nCursorX;
-	int y = m_nCursorY;
-	int w = CFG::Menu_Slider_Width;
-	int h = CFG::Menu_Slider_Height;
+    // Auto Airblast
+    if (ImGui::CollapsingHeader("Auto Airblast", ImGuiTreeNodeFlags_DefaultOpen))
+    {
+        ImGui::Checkbox("Active##TriggerbotAirblast", &CFG::Triggerbot_AutoAirblast_Active);
+        ImGui::Checkbox("Aim Assist", &CFG::Triggerbot_AutoAirblast_Aim_Assist);
 
-	int nTextH = H::Fonts->Get(EFonts::Menu).m_nTall;
+        // Mode
+        const char* modes[] = { "Legit", "Rage" };
+        ImGui::Combo("Mode##Airblast", &CFG::Triggerbot_AutoAirblast_Mode, modes, IM_ARRAYSIZE(modes));
 
-	bool bHovered = IsHovered(x, y + (nTextH + CFG::Menu_Spacing_Y), w, h, &nVar, true);
+        // Aim Mode
+        const char* aimModes[] = { "Normal", "Silent" };
+        ImGui::Combo("Aim Mode##Airblast", &CFG::Triggerbot_AutoAirblast_Aim_Mode, aimModes, IM_ARRAYSIZE(aimModes));
 
-	bool bAcceptsInput = [&]() -> bool
-	{
-		for (const auto &State : m_mapStates)
-		{
-			if (State.second && State.first != &nVar)
-				return false;
-		}
+        // Ignore
+        ImGui::Text("Ignore:");
+        ImGui::Checkbox("Rocket", &CFG::Triggerbot_AutoAirblast_Ignore_Rocket);
+        ImGui::SameLine();
+        ImGui::Checkbox("Sentry Rocket", &CFG::Triggerbot_AutoAirblast_Ignore_SentryRocket);
+        ImGui::Checkbox("Jarate", &CFG::Triggerbot_AutoAirblast_Ignore_Jar);
+        ImGui::SameLine();
+        ImGui::Checkbox("Gas", &CFG::Triggerbot_AutoAirblast_Ignore_JarGas);
+        ImGui::SameLine();
+        ImGui::Checkbox("Milk", &CFG::Triggerbot_AutoAirblast_Ignore_JarMilk);
+        ImGui::Checkbox("Arrow", &CFG::Triggerbot_AutoAirblast_Ignore_Arrow);
+        ImGui::SameLine();
+        ImGui::Checkbox("Flare", &CFG::Triggerbot_AutoAirblast_Ignore_Flare);
+        ImGui::SameLine();
+        ImGui::Checkbox("Cleaver", &CFG::Triggerbot_AutoAirblast_Ignore_Cleaver);
+        ImGui::Checkbox("Healing Bolt", &CFG::Triggerbot_AutoAirblast_Ignore_HealingBolt);
+        ImGui::SameLine();
+        ImGui::Checkbox("Pipebomb", &CFG::Triggerbot_AutoAirblast_Ignore_PipebombProjectile);
+        ImGui::Checkbox("Ball of Fire", &CFG::Triggerbot_AutoAirblast_Ignore_BallOfFire);
+        ImGui::SameLine();
+        ImGui::Checkbox("Energy Ring", &CFG::Triggerbot_AutoAirblast_Ignore_EnergyRing);
+        ImGui::SameLine();
+        ImGui::Checkbox("Energy Ball", &CFG::Triggerbot_AutoAirblast_Ignore_EnergyBall);
+    }
 
-		return true;
-	}();
+    // Auto Detonate
+    if (ImGui::CollapsingHeader("Auto Detonate", ImGuiTreeNodeFlags_DefaultOpen))
+    {
+        ImGui::Checkbox("Active##TriggerbotDetonate", &CFG::Triggerbot_AutoDetonate_Active);
 
-	if (!m_bClickConsumed && bAcceptsInput)
-	{
-		if (H::Input->IsPressed(VK_RBUTTON))
-		{
-			if (bHovered)
-			{
-				bool bLeftSideHovered = IsHovered(x, y + (nTextH + CFG::Menu_Spacing_Y), w / 2, h, &nVar, true);
+        // Targets
+        ImGui::Text("Targets:");
+        ImGui::Checkbox("Players##Triggerbot", &CFG::Triggerbot_AutoDetonate_Target_Players);
+        ImGui::SameLine();
+        ImGui::Checkbox("Buildings##Triggerbot", &CFG::Triggerbot_AutoDetonate_Target_Buildings);
 
-				if (bLeftSideHovered)
-					nVar -= nStep;
+        // Ignore
+        ImGui::Text("Ignore:");
+        ImGui::Checkbox("Friends##AutoDetonate", &CFG::Triggerbot_AutoDetonate_Ignore_Friends);
+        ImGui::SameLine();
+        ImGui::Checkbox("Invisible##AutoDetonate", &CFG::Triggerbot_AutoDetonate_Ignore_Invisible);
+        ImGui::SameLine();
+        ImGui::Checkbox("Invulnerable##Detonate", &CFG::Triggerbot_AutoDetonate_Ignore_Invulnerable);
+    }
 
-				else nVar += nStep;
-			}
-		}
+    // Auto Backstab
+    if (ImGui::CollapsingHeader("Auto Backstab", ImGuiTreeNodeFlags_DefaultOpen))
+    {
+        ImGui::Checkbox("Active##TriggerbotBackstab", &CFG::Triggerbot_AutoBackstab_Active);
+        ImGui::Checkbox("Knife If Lethal", &CFG::Triggerbot_AutoBackstab_Knife_If_Lethal);
 
-		if (H::Input->IsPressed(VK_LBUTTON))
-		{
-			if (bHovered) {
-				m_bClickConsumed = true;
-				m_mapStates[&nVar] = true;
-			}
-		}
+        // Mode
+        const char* modes[] = { "Legit", "Rage" };
+        ImGui::Combo("Mode##Backstab", &CFG::Triggerbot_AutoBacktab_Mode, modes, IM_ARRAYSIZE(modes));
 
-		else
-		{
-			if (!H::Input->IsHeld(VK_LBUTTON))
-				m_mapStates[&nVar] = false;
-		}
-	}
+        // Aim Mode
+        const char* aimModes[] = { "Normal", "Silent" };
+        ImGui::Combo("Aim Mode##Backstab", &CFG::Triggerbot_AutoBacktab_Aim_Mode, aimModes, IM_ARRAYSIZE(aimModes));
 
-	if (m_mapStates[&nVar])
-	{
-		nVar = static_cast<int>(Math::RemapValClamped(
-			static_cast<float>(H::Input->GetMouseX()),
-			static_cast<float>(x), static_cast<float>(x + w),
-			static_cast<float>(nMin), static_cast<float>(nMax)
-		));
-	}
-
-	if (nVar < 0)
-		nVar = nVar - (nVar - nStep / 2) % nStep - nStep / 2;
-
-	else nVar = nVar - (nVar + nStep / 2) % nStep + nStep / 2;
-
-	nVar = std::clamp(nVar, nMin, nMax);
-
-	int nFillWidth = static_cast<int>(Math::RemapValClamped(
-		static_cast<float>(nVar),
-		static_cast<float>(nMin), static_cast<float>(nMax),
-		0.0f, static_cast<float>(w)
-	));
-
-	H::Draw->String(
-		H::Fonts->Get(EFonts::Menu),
-		x, y,
-		(bHovered || m_mapStates[&nVar]) ? CFG::Menu_Text_Active : CFG::Menu_Text_Inactive,
-		POS_DEFAULT,
-		szLabel
-	);
-
-	Color_t clr = CFG::Menu_Accent_Primary;
-	Color_t clr_dim = { clr.r, clr.g, clr.b, 25 };
-
-	H::Draw->Rect(x, y + (nTextH + CFG::Menu_Spacing_Y), w, h, clr_dim);
-	H::Draw->GradientRect(x, y + (nTextH + CFG::Menu_Spacing_Y), nFillWidth, h, clr_dim, clr, false);
-	H::Draw->OutlinedRect(x, y + (nTextH + CFG::Menu_Spacing_Y), nFillWidth, h, clr);
-	H::Draw->Rect(x + (nFillWidth - 1), y + (nTextH + CFG::Menu_Spacing_Y) - 1, 2, h + 2, CFG::Menu_Text_Active);
-
-	H::Draw->String(
-		H::Fonts->Get(EFonts::Menu),
-		x + (w + CFG::Menu_Spacing_X),
-		y + (nTextH - 1),
-		(bHovered || m_mapStates[&nVar]) ? CFG::Menu_Text_Active : CFG::Menu_Text_Inactive,
-		POS_DEFAULT,
-		"%d", nVar
-	);
-
-	m_nCursorY += h + nTextH + CFG::Menu_Spacing_Y + CFG::Menu_Spacing_Y + 2;
-
-	return bCallback;
+        // Ignore
+        ImGui::Text("Ignore:");
+        ImGui::Checkbox("Friends##AutoBackstab", &CFG::Triggerbot_AutoBackstab_Ignore_Friends);
+        ImGui::SameLine();
+        ImGui::Checkbox("Invisible##AutoBackstab", &CFG::Triggerbot_AutoBackstab_Ignore_Invisible);
+        ImGui::SameLine();
+        ImGui::Checkbox("Invulnerable##Backstab", &CFG::Triggerbot_AutoBackstab_Ignore_Invulnerable);
+    }
 }
 
-bool CMenu::InputKey(const char *szLabel, int &nKeyOut)
+void CMenu::RenderVisualsTab()
 {
-	auto VK2STR = [&](const short key) -> std::string
-	{
-		switch (key)
-		{
-			case VK_LBUTTON: return "LButton";
-			case VK_RBUTTON: return "RButton";
-			case VK_MBUTTON: return "MButton";
-			case VK_XBUTTON1: return "XButton1";
-			case VK_XBUTTON2: return "XButton2";
-			case VK_NUMPAD0: return "NumPad0";
-			case VK_NUMPAD1: return "NumPad1";
-			case VK_NUMPAD2: return "NumPad2";
-			case VK_NUMPAD3: return "NumPad3";
-			case VK_NUMPAD4: return "NumPad4";
-			case VK_NUMPAD5: return "NumPad5";
-			case VK_NUMPAD6: return "NumPad6";
-			case VK_NUMPAD7: return "NumPad7";
-			case VK_NUMPAD8: return "NumPad8";
-			case VK_NUMPAD9: return "NumPad9";
-			case VK_MENU: return "Alt";
-			case VK_CAPITAL: return "Caps Lock";
-			case 0x0: return "None";
-			default: break;
-		}
+    if (ImGui::BeginTabItem("Visuals"))
+    {
+        if (ImGui::BeginTabBar("VisualsSubTabs"))
+        {
+            if (ImGui::BeginTabItem("ESP"))
+            {
+                RenderESPTab();
+                ImGui::EndTabItem();
+            }
 
-		CHAR output[16] = { "\0" };
+            if (ImGui::BeginTabItem("Radar"))
+            {
+                RenderRadarTab();
+                ImGui::EndTabItem();
+            }
 
-		if (const int result = GetKeyNameTextA(MapVirtualKeyW(key, MAPVK_VK_TO_VSC) << 16, output, 16))
-			return output;
+            if (ImGui::BeginTabItem("Materials"))
+            {
+                RenderMaterialsTab();
+                ImGui::EndTabItem();
+            }
 
-		return "VK2STR_FAILED";
-	};
+            if (ImGui::BeginTabItem("Outlines"))
+            {
+                RenderOutlinesTab();
+                ImGui::EndTabItem();
+            }
 
-	bool bCallback = false;
+            if (ImGui::BeginTabItem("Other"))
+            {
+                RenderOtherTab();
+                ImGui::EndTabItem();
+            }
 
-	int x = m_nCursorX;
-	int y = m_nCursorY;
-	int w = CFG::Menu_InputKey_Width;
-	int h = CFG::Menu_InputKey_Height;
+            if (ImGui::BeginTabItem("Other2"))
+            {
+                RenderOther2Tab();
+                ImGui::EndTabItem();
+            }
 
-	int w_with_text = [&]() -> int {
-		int w_out = 0, h_out = 0;
-		I::MatSystemSurface->GetTextSize(H::Fonts->Get(EFonts::Menu).m_dwFont, Utils::ConvertUtf8ToWide(szLabel).c_str(), w_out, h_out);
-		return w + w_out + 1;
-	}();
+            if (ImGui::BeginTabItem("Colors"))
+            {
+                RenderColorsTab();
+                ImGui::EndTabItem();
+            }
 
-	bool bHovered = IsHovered(x, y, w_with_text, h, &nKeyOut);
-	bool bActive = m_mapStates[&nKeyOut] || bHovered;
+            ImGui::EndTabBar();
+        }
 
-	if (!m_mapStates[&nKeyOut] && bHovered && H::Input->IsPressed(VK_LBUTTON) && !m_bClickConsumed)
-		m_mapStates[&nKeyOut] = m_bClickConsumed = true;
-
-	m_bInKeybind = false;
-	if (m_mapStates[&nKeyOut])
-	{
-		m_bInKeybind = true;
-
-		for (int n = 0; n < 256; n++)
-		{
-			bool bMouse = (n > 0x0 && n < 0x7);
-			bool bLetter = (n > L'A' - 1 && n < L'Z' + 1);
-			bool bAllowed = (n == VK_LSHIFT || n == VK_RSHIFT || n == VK_SHIFT || n == VK_ESCAPE || n == VK_INSERT || n == VK_F3 || n == VK_MENU || n == VK_CAPITAL || n == VK_SPACE || n == VK_CONTROL);
-			bool bNumPad = n > (VK_NUMPAD0 - 1) && n < (VK_NUMPAD9)+1;
-
-			if (bMouse || bLetter || bAllowed || bNumPad)
-			{
-				if (H::Input->IsPressed(n))
-				{
-					if (n == VK_INSERT || n == VK_F3) {
-						m_mapStates[&nKeyOut] = false;
-						break;
-					}
-
-					else if (n == VK_ESCAPE) {
-						nKeyOut = 0x0;
-						m_mapStates[&nKeyOut] = false;
-						break;
-					}
-
-					else
-					{
-						if (n == VK_LBUTTON)
-						{
-							if (m_bClickConsumed)
-								continue;
-
-							m_bClickConsumed = true;
-						}
-
-						nKeyOut = n;
-						m_mapStates[&nKeyOut] = false;
-					}
-
-					break;
-				}
-			}
-		}
-	}
-
-	Color_t clr = CFG::Menu_Accent_Primary;
-
-	if (bActive)
-		H::Draw->Rect(x, y, w, h, { clr.r, clr.g, clr.b, 25 });
-
-	H::Draw->OutlinedRect(x, y, w, h, clr);
-
-	if (m_mapStates[&nKeyOut])
-	{
-		H::Draw->String(
-			H::Fonts->Get(EFonts::Menu),
-			x + (w / 2),
-			y + (h / 2),
-			bActive ? CFG::Menu_Text_Active : CFG::Menu_Text_Inactive,
-			POS_CENTERXY,
-			"...");
-	}
-
-	else
-	{
-		H::Draw->String(
-			H::Fonts->Get(EFonts::Menu),
-			x + (w / 2),
-			y + (h / 2),
-			bActive ? CFG::Menu_Text_Active : CFG::Menu_Text_Inactive,
-			POS_CENTERXY,
-			VK2STR(nKeyOut).c_str());
-	}
-
-	H::Draw->String(
-		H::Fonts->Get(EFonts::Menu),
-		x + (w + CFG::Menu_Spacing_X),
-		y + (h / 2),
-		bActive ? CFG::Menu_Text_Active : CFG::Menu_Text_Inactive,
-		POS_CENTERY,
-		szLabel);
-
-	m_nCursorY += h + CFG::Menu_Spacing_Y;
-
-	return bCallback;
+        ImGui::EndTabItem();
+    }
 }
 
-bool CMenu::Button(const char *szLabel, bool bActive, int nCustomWidth)
+void CMenu::RenderESPTab()
 {
-	bool bCallback = false;
+    // Global
+    if (ImGui::CollapsingHeader("Global##Aimbot", ImGuiTreeNodeFlags_DefaultOpen))
+    {
+        ImGui::Checkbox("Active##ESP", &CFG::ESP_Active);
 
-	int x = m_nCursorX;
-	int y = m_nCursorY;
-	int w = 0;
-	int h = 0;
+        // Tracer From
+        const char* tracerFrom[] = { "Top", "Center", "Bottom" };
+        ImGui::Combo("Tracer From", &CFG::ESP_Tracer_From, tracerFrom, IM_ARRAYSIZE(tracerFrom));
 
-	I::MatSystemSurface->GetTextSize(H::Fonts->Get(EFonts::Menu).m_dwFont, Utils::ConvertUtf8ToWide(szLabel).c_str(), w, h);
+        // Tracer To
+        const char* tracerTo[] = { "Top", "Center", "Bottom" };
+        ImGui::Combo("Tracer To", &CFG::ESP_Tracer_To, tracerTo, IM_ARRAYSIZE(tracerTo));
 
-	if (!w || !h)
-		return false;
+        // Text Color
+        const char* textColors[] = { "Default", "White" };
+        ImGui::Combo("Text Color", &CFG::ESP_Text_Color, textColors, IM_ARRAYSIZE(textColors));
+    }
 
-	if (nCustomWidth > 0)
-		w = nCustomWidth;
+    // World
+    if (ImGui::CollapsingHeader("World##ESP", ImGuiTreeNodeFlags_DefaultOpen))
+    {
+        ImGui::Checkbox("Active##ESPWorld", &CFG::ESP_World_Active);
+        ImGui::SliderFloat("Alpha##ESPWorld", &CFG::ESP_World_Alpha, 0.1f, 1.0f, "%.1f");
 
-	w += CFG::Menu_Spacing_X * 2;
-	h += CFG::Menu_Spacing_Y - 1;
+        // Ignore
+        ImGui::Text("Ignore:");
+        ImGui::Checkbox("Health Packs##ESPWorld", &CFG::ESP_World_Ignore_HealthPacks);
+        ImGui::SameLine();
+        ImGui::Checkbox("Ammo Packs##ESPWorld", &CFG::ESP_World_Ignore_AmmoPacks);
+        ImGui::Checkbox("Local Projectiles##ESPWorld", &CFG::ESP_World_Ignore_LocalProjectiles);
+        ImGui::SameLine();
+        ImGui::Checkbox("Enemy Projectiles##ESPWorld", &CFG::ESP_World_Ignore_EnemyProjectiles);
+        ImGui::SameLine();
+        ImGui::Checkbox("Teammate Projectiles##ESPWorld", &CFG::ESP_World_Ignore_TeammateProjectiles);
+        ImGui::Checkbox("Halloween Gifts##ESPWorld", &CFG::ESP_World_Ignore_Halloween_Gift);
+        ImGui::SameLine();
+        ImGui::Checkbox("MVM Money##ESPWorld", &CFG::ESP_World_Ignore_MVM_Money);
 
-	bool bHovered = IsHovered(x, y, w, h, nullptr);
+        // Draw
+        ImGui::Text("Draw:");
+        ImGui::Checkbox("Name##ESPWorld", &CFG::ESP_World_Name);
+        ImGui::SameLine();
+        ImGui::Checkbox("Box##ESPWorld", &CFG::ESP_World_Box);
+        ImGui::SameLine();
+        ImGui::Checkbox("Tracer##ESPWorld", &CFG::ESP_World_Tracer);
+    }
 
-	if (bHovered && H::Input->IsPressed(VK_LBUTTON) && !m_bClickConsumed)
-		bCallback = m_bClickConsumed = true;
+    // Players
+    if (ImGui::CollapsingHeader("Players##ESP", ImGuiTreeNodeFlags_DefaultOpen))
+    {
+        ImGui::Checkbox("Active##ESPPlayers", &CFG::ESP_Players_Active);
+        ImGui::SliderFloat("Alpha##ESPPlayers", &CFG::ESP_Players_Alpha, 0.1f, 1.0f, "%.1f");
+        ImGui::SliderFloat("Arrow Radius", &CFG::ESP_Players_Arrows_Radius, 50.0f, 400.0f, "%.0f");
+        ImGui::SliderFloat("Arrow Max Distance", &CFG::ESP_Players_Arrows_Max_Distance, 100.0f, 1000.0f, "%.0f");
 
-	Color_t clr = CFG::Menu_Accent_Primary;
-	Color_t clr_dim = { clr.r, clr.g, clr.b, (bHovered || bActive) ? static_cast<byte>(50) : static_cast<byte>(0) };
+        // Bones Color
+        const char* bonesColors[] = { "Default", "White" };
+        ImGui::Combo("Bones Color", &CFG::ESP_Players_Bones_Color, bonesColors, IM_ARRAYSIZE(bonesColors));
 
-	H::Draw->Rect(x, y, w, h, clr_dim);
-	H::Draw->OutlinedRect(x, y, w, h, clr);
+        // Ignore
+        ImGui::Text("Ignore:");
+        ImGui::Checkbox("Local##ESPPlayers", &CFG::ESP_Players_Ignore_Local);
+        ImGui::SameLine();
+        ImGui::Checkbox("Friends##ESPPlayers", &CFG::ESP_Players_Ignore_Friends);
+        ImGui::SameLine();
+        ImGui::Checkbox("Enemies##ESPPlayers", &CFG::ESP_Players_Ignore_Enemies);
+        ImGui::SameLine();
+        ImGui::Checkbox("Teammates##ESPPlayers", &CFG::ESP_Players_Ignore_Teammates);
+        ImGui::Checkbox("Invisible##ESPPlayers", &CFG::ESP_Players_Ignore_Invisible);
 
-	H::Draw->String(
-		H::Fonts->Get(EFonts::Menu),
-		x + (w / 2), y + (h / 2) - 1,
-		(bHovered || bActive) ? CFG::Menu_Text_Active : CFG::Menu_Text_Inactive,
-		POS_CENTERXY, szLabel
-	);
+        // Draw
+        ImGui::Text("Draw:");
+        ImGui::Checkbox("Name##ESPPlayers", &CFG::ESP_Players_Name);
+        ImGui::SameLine();
+        ImGui::Checkbox("Class", &CFG::ESP_Players_Class);
+        ImGui::SameLine();
+        ImGui::Checkbox("Class Icon", &CFG::ESP_Players_Class_Icon);
+        ImGui::Checkbox("Health##ESPPlayers", &CFG::ESP_Players_Health);
+        ImGui::SameLine();
+        ImGui::Checkbox("Health Bar##ESPPlayers", &CFG::ESP_Players_HealthBar);
+        ImGui::SameLine();
+        ImGui::Checkbox("Uber", &CFG::ESP_Players_Uber);
+        ImGui::Checkbox("Uber Bar", &CFG::ESP_Players_UberBar);
+        ImGui::SameLine();
+        ImGui::Checkbox("Box##ESPPlayers", &CFG::ESP_Players_Box);
+        ImGui::SameLine();
+        ImGui::Checkbox("Tracer##ESPPlayers", &CFG::ESP_Players_Tracer);
+        ImGui::Checkbox("Bones", &CFG::ESP_Players_Bones);
+        ImGui::SameLine();
+        ImGui::Checkbox("Arrows", &CFG::ESP_Players_Arrows);
+        ImGui::SameLine();
+        ImGui::Checkbox("Conds##ESPPlayers", &CFG::ESP_Players_Conds);
+        ImGui::Checkbox("Sniper Lines", &CFG::ESP_Players_Sniper_Lines);
 
-	m_nCursorY += h + CFG::Menu_Spacing_Y;
-	m_nLastButtonW = w;
+        ImGui::Checkbox("Show Team Medics##ESPPlayers", &CFG::ESP_Players_Show_Teammate_Medics);
+    }
 
-	return bCallback;
+    // Buildings
+    if (ImGui::CollapsingHeader("Buildings##ESP", ImGuiTreeNodeFlags_DefaultOpen))
+    {
+        ImGui::Checkbox("Active##ESPBuildings", &CFG::ESP_Buildings_Active);
+        ImGui::SliderFloat("Alpha##ESPBuildings", &CFG::ESP_Buildings_Alpha, 0.1f, 1.0f, "%.1f");
+
+        // Ignore
+        ImGui::Text("Ignore:");
+        ImGui::Checkbox("Local##ESPBuildings", &CFG::ESP_Buildings_Ignore_Local);
+        ImGui::SameLine();
+        ImGui::Checkbox("Enemies##ESPBuildings", &CFG::ESP_Buildings_Ignore_Enemies);
+        ImGui::SameLine();
+        ImGui::Checkbox("Teammates##ESPBuildings", &CFG::ESP_Buildings_Ignore_Teammates);
+
+        // Draw
+        ImGui::Text("Draw:");
+        ImGui::Checkbox("Name##ESPBuildings", &CFG::ESP_Buildings_Name);
+        ImGui::SameLine();
+        ImGui::Checkbox("Health##ESPBuildings", &CFG::ESP_Buildings_Health);
+        ImGui::SameLine();
+        ImGui::Checkbox("Health Bar##ESPBuildings", &CFG::ESP_Buildings_HealthBar);
+        ImGui::SameLine();
+        ImGui::Checkbox("Level", &CFG::ESP_Buildings_Level);
+        ImGui::SameLine();
+        ImGui::Checkbox("Level Bar", &CFG::ESP_Buildings_LevelBar);
+        ImGui::Checkbox("Box##ESPBuildings", &CFG::ESP_Buildings_Box);
+        ImGui::SameLine();
+        ImGui::Checkbox("Tracer##ESPBuildings", &CFG::ESP_Buildings_Tracer);
+        ImGui::SameLine();
+        ImGui::Checkbox("Conds##ESPBuildings", &CFG::ESP_Buildings_Conds);
+
+        ImGui::Checkbox("Show Team Dispensers##ESPBuildings", &CFG::ESP_Buildings_Show_Teammate_Dispensers);
+    }
 }
 
-bool CMenu::playerListButton(const wchar_t *label, int nCustomWidth, Color_t clr, bool center_txt)
+void CMenu::RenderRadarTab()
 {
-	bool bCallback = false;
+    // Global
+    if (ImGui::CollapsingHeader("Global##Aimbot", ImGuiTreeNodeFlags_DefaultOpen))
+    {
+        ImGui::Checkbox("Active##Radar", &CFG::Radar_Active);
 
-	int x = m_nCursorX;
-	int y = m_nCursorY;
-	int w = nCustomWidth;
-	int h = H::Fonts->Get(EFonts::Menu).m_nTall;
+        // Style
+        const char* styles[] = { "Rectangle", "Circle" };
+        ImGui::Combo("Style##Radar", &CFG::Radar_Style, styles, IM_ARRAYSIZE(styles));
 
-	w += CFG::Menu_Spacing_X * 2;
-	h += CFG::Menu_Spacing_Y - 1;
+        ImGui::SliderInt("Size", &CFG::Radar_Size, 100, 1000);
+        ImGui::SliderInt("Icon Size", &CFG::Radar_Icon_Size, 18, 36);
+        ImGui::SliderFloat("Radius", &CFG::Radar_Radius, 100.0f, 3000.0f, "%.0f");
+        ImGui::SliderFloat("Cross Alpha", &CFG::Radar_Cross_Alpha, 0.0f, 1.0f, "%.1f");
+        ImGui::SliderFloat("Outline Alpha##Radar", &CFG::Radar_Outline_Alpha, 0.0f, 1.0f, "%.1f");
+        ImGui::SliderFloat("Background Alpha##Radar", &CFG::Radar_Background_Alpha, 0.0f, 1.0f, "%.1f");
+    }
 
-	bool bHovered = IsHovered(x, y, w, h, nullptr);
+    // Players
+    if (ImGui::CollapsingHeader("Players##ESP", ImGuiTreeNodeFlags_DefaultOpen))
+    {
+        ImGui::Checkbox("Active##RadarPlayers", &CFG::Radar_Players_Active);
 
-	if (bHovered && H::Input->IsPressed(VK_LBUTTON) && !m_bClickConsumed)
-		bCallback = m_bClickConsumed = true;
+        // Ignore
+        ImGui::Text("Ignore:");
+        ImGui::Checkbox("Local##RadarPlayers", &CFG::Radar_Players_Ignore_Local);
+        ImGui::SameLine();
+        ImGui::Checkbox("Friends##RadarPlayers", &CFG::Radar_Players_Ignore_Friends);
+        ImGui::SameLine();
+        ImGui::Checkbox("Enemies##RadarPlayers", &CFG::Radar_Players_Ignore_Enemies);
+        ImGui::SameLine();
+        ImGui::Checkbox("Teammates##RadarPlayers", &CFG::Radar_Players_Ignore_Teammates);
+        ImGui::SameLine();
+        ImGui::Checkbox("Invisible##RadarPlayers", &CFG::Radar_Players_Ignore_Invisible);
 
-	Color_t clrA = CFG::Menu_Accent_Primary;
-	Color_t clr_dim = { clrA.r, clrA.g, clrA.b, bHovered ? static_cast<byte>(50) : static_cast<byte>(0) };
+        ImGui::Checkbox("Show Team Medics##RadarPlayers", &CFG::Radar_Players_Show_Teammate_Medics);
+    }
 
-	H::Draw->Rect(x, y, w, h, clr_dim);
-	H::Draw->OutlinedRect(x, y, w, h, clrA);
+    // Buildings
+    if (ImGui::CollapsingHeader("Buildings##ESP", ImGuiTreeNodeFlags_DefaultOpen))
+    {
+        ImGui::Checkbox("Active##RadarBuildings", &CFG::Radar_Buildings_Active);
 
-	H::Draw->StartClipping(x, y, w, h);
+        // Ignore
+        ImGui::Text("Ignore:");
+        ImGui::Checkbox("Local##RadarBuildings", &CFG::Radar_Buildings_Ignore_Local);
+        ImGui::SameLine();
+        ImGui::Checkbox("Enemies##RadarBuildings", &CFG::Radar_Buildings_Ignore_Enemies);
+        ImGui::SameLine();
+        ImGui::Checkbox("Teammates##RadarBuildings", &CFG::Radar_Buildings_Ignore_Teammates);
 
-	if (center_txt)
-	{
-		H::Draw->String
-		(
-			H::Fonts->Get(EFonts::Menu),
-			x + (w / 2), y + (h / 2) - 1,
-			clr,
-			POS_CENTERXY, label
-		);
-	}
+        ImGui::Checkbox("Show Team Dispensers##RadarBuildings", &CFG::Radar_Buildings_Show_Teammate_Dispensers);
+    }
 
-	else
-	{
-		H::Draw->String
-		(
-			H::Fonts->Get(EFonts::Menu),
-			x + CFG::Menu_Spacing_X, y + (h / 2) - 1,
-			clr,
-			POS_CENTERY, label
-		);
-	}
+    // World
+    if (ImGui::CollapsingHeader("World##ESP", ImGuiTreeNodeFlags_DefaultOpen))
+    {
+        ImGui::Checkbox("Active##RadarWorld", &CFG::Radar_World_Active);
 
-	H::Draw->EndClipping();
-
-	m_nCursorY += h + CFG::Menu_Spacing_Y;
-	m_nLastButtonW = w;
-
-	return bCallback;
+        // Ignore
+        ImGui::Text("Ignore:");
+        ImGui::Checkbox("Health Packs##RadarWorld", &CFG::Radar_World_Ignore_HealthPacks);
+        ImGui::SameLine();
+        ImGui::Checkbox("Ammo Packs##RadarWorld", &CFG::Radar_World_Ignore_AmmoPacks);
+        ImGui::SameLine();
+        ImGui::Checkbox("Halloween Gifts##RadarWorld", &CFG::Radar_World_Ignore_Halloween_Gift);
+        ImGui::SameLine();
+        ImGui::Checkbox("MVM Money##RadarWorld", &CFG::Radar_World_Ignore_MVM_Money);
+    }
 }
 
-bool CMenu::InputText(const char *szLabel, const char *szLabel2, std::string &strOutput)
+void CMenu::RenderMaterialsTab()
 {
-	bool bCallback = false;
+    // Global
+    if (ImGui::CollapsingHeader("Global##Aimbot", ImGuiTreeNodeFlags_DefaultOpen))
+    {
+        ImGui::Checkbox("Active##Materials", &CFG::Materials_Active);
+    }
 
-	int x = m_nCursorX;
-	int y = m_nCursorY;
-	int w = 0;
-	int h = 0;
+    // World
+    if (ImGui::CollapsingHeader("World##ESP", ImGuiTreeNodeFlags_DefaultOpen))
+    {
+        ImGui::Checkbox("Active##MaterialsWorld", &CFG::Materials_World_Active);
+        ImGui::Checkbox("No Depth##MaterialsWorld", &CFG::Materials_World_No_Depth);
+        ImGui::SliderFloat("Alpha##MaterialsWorld", &CFG::Materials_World_Alpha, 0.0f, 1.0f, "%.1f");
 
-	I::MatSystemSurface->GetTextSize(H::Fonts->Get(EFonts::Menu).m_dwFont, Utils::ConvertUtf8ToWide(szLabel).c_str(), w, h);
+        // Material
+        const char* materials[] = { "Original", "Flat", "Shaded", "Glossy", "Glow", "Plastic" };
+        ImGui::Combo("Material##MaterialsWorld", &CFG::Materials_World_Material, materials, IM_ARRAYSIZE(materials));
 
-	if (!w || !h)
-		return false;
+        // Ignore
+        ImGui::Text("Ignore:");
+        ImGui::Checkbox("Health Packs##MaterialsWorld", &CFG::Materials_World_Ignore_HealthPacks);
+        ImGui::SameLine();
+        ImGui::Checkbox("Ammo Packs##MaterialsWorld", &CFG::Materials_World_Ignore_AmmoPacks);
+        ImGui::Checkbox("Local Projectiles##MaterialsWorld", &CFG::Materials_World_Ignore_LocalProjectiles);
+        ImGui::SameLine();
+        ImGui::Checkbox("Enemy Projectiles##MaterialsWorld", &CFG::Materials_World_Ignore_EnemyProjectiles);
+        ImGui::SameLine();
+        ImGui::Checkbox("Teammate Projectiles##MaterialsWorld", &CFG::Materials_World_Ignore_TeammateProjectiles);
+        ImGui::Checkbox("Halloween Gifts##MaterialsWorld", &CFG::Materials_World_Ignore_Halloween_Gift);
+        ImGui::SameLine();
+        ImGui::Checkbox("MVM Money##MaterialsWorld", &CFG::Materials_World_Ignore_MVM_Money);
+    }
 
-	w += CFG::Menu_Spacing_X * 2;
-	h += CFG::Menu_Spacing_Y - 1;
+    // View Model
+    if (ImGui::CollapsingHeader("View Model", ImGuiTreeNodeFlags_DefaultOpen))
+    {
+        ImGui::Checkbox("Active##MaterialsViewModel", &CFG::Materials_ViewModel_Active);
+        ImGui::SliderFloat("Hands Alpha", &CFG::Materials_ViewModel_Hands_Alpha, 0.0f, 1.0f, "%.1f");
 
-	bool bHovered = IsHovered(x, y, w, h, nullptr);
+        // Hands Material
+        const char* materials[] = { "Original", "Flat", "Shaded", "Glossy", "Glow", "Plastic" };
+        ImGui::Combo("Hands Material", &CFG::Materials_ViewModel_Hands_Material, materials, IM_ARRAYSIZE(materials));
 
-	Color_t clr = CFG::Menu_Accent_Primary;
-	Color_t clr_dim = { clr.r, clr.g, clr.b, bHovered ? static_cast<byte>(50) : static_cast<byte>(0) };
+        ImGui::SliderFloat("Weapon Alpha", &CFG::Materials_ViewModel_Weapon_Alpha, 0.0f, 1.0f, "%.1f");
 
-	if (!m_mapStates[&strOutput])
-	{
-		H::Draw->Rect(x, y, w, h, clr_dim);
-		H::Draw->OutlinedRect(x, y, w, h, clr);
-		H::Draw->String(
-			H::Fonts->Get(EFonts::Menu),
-			x + (w / 2), y + (h / 2) - 1,
-			bHovered ? CFG::Menu_Text_Active : CFG::Menu_Text_Inactive,
-			POS_CENTERXY, szLabel
-		);
-	}
+        // Weapon Material
+        ImGui::Combo("Weapon Material", &CFG::Materials_ViewModel_Weapon_Material, materials, IM_ARRAYSIZE(materials));
+    }
 
-	bool bCanOpen = [&]() -> bool
-	{
-		for (const auto &State : m_mapStates)
-		{
-			if (State.second && State.first != &strOutput)
-				return false;
-		}
+    // Players
+    if (ImGui::CollapsingHeader("Players##ESP", ImGuiTreeNodeFlags_DefaultOpen))
+    {
+        ImGui::Checkbox("Active##MaterialsPlayers", &CFG::Materials_Players_Active);
+        ImGui::Checkbox("No Depth##MaterialsPlayers", &CFG::Materials_Players_No_Depth);
+        ImGui::SliderFloat("Alpha##MaterialsPlayers", &CFG::Materials_Players_Alpha, 0.0f, 1.0f, "%.1f");
 
-		return true;
-	}();
+        // Material
+        const char* materials[] = { "Original", "Flat", "Shaded", "Glossy", "Glow", "Plastic" };
+        ImGui::Combo("Material##MaterialsPlayers", &CFG::Materials_Players_Material, materials, IM_ARRAYSIZE(materials));
 
-	static std::string strTemp = {};
+        // Lag Records Style
+        const char* lagRecordStyles[] = { "All", "Last Only" };
+        ImGui::Combo("Lag Records Style", &CFG::Materials_Players_LagRecords_Style, lagRecordStyles, IM_ARRAYSIZE(lagRecordStyles));
 
-	if (bHovered && H::Input->IsPressed(VK_LBUTTON) && !m_bClickConsumed && bCanOpen) {
-		m_bClickConsumed = m_mapStates[&strOutput] = true;
-		strTemp.clear();
-	}
+        // Ignore
+        ImGui::Text("Ignore:");
+        ImGui::Checkbox("Local##MaterialsPlayers", &CFG::Materials_Players_Ignore_Local);
+        ImGui::SameLine();
+        ImGui::Checkbox("Friends##MaterialsPlayers", &CFG::Materials_Players_Ignore_Friends);
+        ImGui::SameLine();
+        ImGui::Checkbox("Enemies##MaterialsPlayers", &CFG::Materials_Players_Ignore_Enemies);
+        ImGui::SameLine();
+        ImGui::Checkbox("Teammates##MaterialsPlayers", &CFG::Materials_Players_Ignore_Teammates);
+        ImGui::SameLine();
+        ImGui::Checkbox("Lag Records", &CFG::Materials_Players_Ignore_LagRecords);
 
-	if (H::Input->IsPressed(VK_ESCAPE) || H::Input->IsPressed(VK_INSERT) || H::Input->IsPressed(VK_F3)) {
-		m_mapStates[&strOutput] = false;
-		strTemp.clear();
-	}
+        ImGui::Checkbox("Show Team Medics##MaterialsPlayers", &CFG::Materials_Players_Show_Teammate_Medics);
+    }
 
-	m_bWantTextInput = false;
-	if (m_mapStates[&strOutput])
-	{
-		m_bWantTextInput = true;
+    // Buildings
+    if (ImGui::CollapsingHeader("Buildings##ESP", ImGuiTreeNodeFlags_DefaultOpen))
+    {
+        ImGui::Checkbox("Active##MaterialsBuildings", &CFG::Materials_Buildings_Active);
+        ImGui::Checkbox("No Depth##MaterialsBuildings", &CFG::Materials_Buildings_No_Depth);
+        ImGui::SliderFloat("Alpha##MaterialsBuildings", &CFG::Materials_Buildings_Alpha, 0.0f, 1.0f, "%.1f");
 
-		y += CFG::Menu_Spacing_Y;
+        // Material
+        const char* materials[] = { "Original", "Flat", "Shaded", "Glossy", "Glow", "Plastic" };
+        ImGui::Combo("Material##MaterialsBuildings", &CFG::Materials_Buildings_Material, materials, IM_ARRAYSIZE(materials));
 
-		int w = CFG::Menu_InputText_Width;
-		int h = CFG::Menu_InputText_Height;
+        // Ignore
+        ImGui::Text("Ignore:");
+        ImGui::Checkbox("Local##MaterialsBuildings", &CFG::Materials_Buildings_Ignore_Local);
+        ImGui::SameLine();
+        ImGui::Checkbox("Enemies##MaterialsBuildings", &CFG::Materials_Buildings_Ignore_Enemies);
+        ImGui::SameLine();
+        ImGui::Checkbox("Teammates##MaterialsBuildings", &CFG::Materials_Buildings_Ignore_Teammates);
 
-		H::LateRender->Rect(x, y, w, h, CFG::Menu_Background);
-		H::LateRender->OutlinedRect(x, y, w, h, clr);
-		H::LateRender->String(
-			H::Fonts->Get(EFonts::Menu),
-			x + CFG::Menu_Spacing_X,
-			y + (CFG::Menu_Spacing_Y * 3),
-			CFG::Menu_Text_Inactive,
-			POS_CENTERY, szLabel2, {}
-		);
-
-		if (strTemp.length() < 15)
-		{
-			for (int n = 0; n < 256; n++)
-			{
-				if ((n > 'A' - 1 && n < 'Z' + 1) && H::Input->IsPressedAndHeld(n))
-				{
-					char ch = 0;
-
-					if ((GetKeyState(VK_CAPITAL) & 1) || H::Input->IsHeld(VK_SHIFT))
-						ch = static_cast<char>(n);
-
-					else ch = static_cast<char>(std::tolower(n));
-
-					strTemp += ch;
-				}
-			}
-		}
-
-		if (strTemp.length() > 0)
-		{
-			if (H::Input->IsPressedAndHeld(VK_BACK))
-				strTemp.erase(strTemp.end() - 1);
-		}
-
-		if (H::Input->IsPressed(VK_RETURN)) {
-			bCallback = strTemp.length() > 0;
-			strOutput = std::string(strTemp.begin(), strTemp.end());
-			m_mapStates[&strOutput] = false;
-			strTemp.clear();
-		}
-
-		H::LateRender->String(
-			H::Fonts->Get(EFonts::Menu),
-			x + CFG::Menu_Spacing_X,
-			y + (h - H::Fonts->Get(EFonts::Menu).m_nTall) + CFG::Menu_Spacing_Y,
-			CFG::Menu_Text_Active,
-			POS_CENTERY, strTemp.c_str(), {}
-		);
-	}
-
-	m_nCursorY += h + CFG::Menu_Spacing_Y;
-
-	m_nLastButtonW = w;
-
-	return bCallback;
+        ImGui::Checkbox("Show Team Dispensers##MaterialsBuildings", &CFG::Materials_Buildings_Show_Teammate_Dispensers);
+    }
 }
 
-bool CMenu::SelectSingle(const char *szLabel, int &nVar, const std::vector<std::pair<const char *, int>> &vecSelects)
+void CMenu::RenderOutlinesTab()
 {
-	bool bCallback = false;
+    // Global
+    if (ImGui::CollapsingHeader("Global##Aimbot", ImGuiTreeNodeFlags_DefaultOpen))
+    {
+        ImGui::Checkbox("Active##Outlines", &CFG::Outlines_Active);
 
-	int x = m_nCursorX;
-	int y = m_nCursorY;
-	int w = CFG::Menu_Select_Width;
-	int h = CFG::Menu_Select_Height;
+        // Style
+        const char* styles[] = { "Bloom", "Crisp", "Cartoony", "Cartoony Alt" };
+        ImGui::Combo("Style##Outlines", &CFG::Outlines_Style, styles, IM_ARRAYSIZE(styles));
 
-	int nTextH = H::Fonts->Get(EFonts::Menu).m_nTall;
+        ImGui::SliderInt("Bloom Amount##Outlines", &CFG::Outlines_Bloom_Amount, 1, 10);
+    }
 
-	bool bHovered = IsHovered(x, y + (nTextH + CFG::Menu_Spacing_Y), w, h, &nVar);
-	bool bActive = bHovered || m_mapStates[&nVar];
+    // World
+    if (ImGui::CollapsingHeader("World##ESP", ImGuiTreeNodeFlags_DefaultOpen))
+    {
+        ImGui::Checkbox("Active##OutlinesWorld", &CFG::Outlines_World_Active);
+        ImGui::SliderFloat("Alpha##OutlinesWorld", &CFG::Outlines_World_Alpha, 0.0f, 1.0f, "%.1f");
 
-	if (!m_bClickConsumed && bHovered && H::Input->IsPressed(VK_LBUTTON)) {
-		m_mapStates[&nVar] = !m_mapStates[&nVar];
-		m_bClickConsumed = true;
-	}
+        // Ignore
+        ImGui::Text("Ignore:");
+        ImGui::Checkbox("Health Packs##OutlinesWorld", &CFG::Outlines_World_Ignore_HealthPacks);
+        ImGui::SameLine();
+        ImGui::Checkbox("Ammo Packs##OutlinesWorld", &CFG::Outlines_World_Ignore_AmmoPacks);
+        ImGui::Checkbox("Local Projectiles##OutlinesWorld", &CFG::Outlines_World_Ignore_LocalProjectiles);
+        ImGui::SameLine();
+        ImGui::Checkbox("Enemy Projectiles##OutlinesWorld", &CFG::Outlines_World_Ignore_EnemyProjectiles);
+        ImGui::SameLine();
+        ImGui::Checkbox("Teammate Projectiles##OutlinesWorld", &CFG::Outlines_World_Ignore_TeammateProjectiles);
+        ImGui::Checkbox("Halloween Gifts##OutlinesWorld", &CFG::Outlines_World_Ignore_Halloween_Gift);
+        ImGui::SameLine();
+        ImGui::Checkbox("MVM Money##OutlinesWorld", &CFG::Outlines_World_Ignore_MVM_Money);
+    }
 
-	auto pszCurSelected = [&]() -> const char *
-	{
-		for (const auto &Select : vecSelects)
-		{
-			if (Select.second == nVar)
-				return Select.first;
-		}
+    // Players
+    if (ImGui::CollapsingHeader("Players##ESP", ImGuiTreeNodeFlags_DefaultOpen))
+    {
+        ImGui::Checkbox("Active##OutlinesPlayers", &CFG::Outlines_Players_Active);
+        ImGui::SliderFloat("Alpha##OutlinesPlayers", &CFG::Outlines_Players_Alpha, 0.0f, 1.0f, "%.1f");
 
-		return "Unknown";
-	}();
+        // Ignore
+        ImGui::Text("Ignore:");
+        ImGui::Checkbox("Local##OutlinesPlayers", &CFG::Outlines_Players_Ignore_Local);
+        ImGui::SameLine();
+        ImGui::Checkbox("Friends##OutlinesPlayers", &CFG::Outlines_Players_Ignore_Friends);
+        ImGui::SameLine();
+        ImGui::Checkbox("Enemies##OutlinesPlayers", &CFG::Outlines_Players_Ignore_Enemies);
+        ImGui::SameLine();
+        ImGui::Checkbox("Teammates##OutlinesPlayers", &CFG::Outlines_Players_Ignore_Teammates);
 
-	Color_t clr = CFG::Menu_Accent_Primary;
-	Color_t bg{ CFG::Menu_Background };
-	Color_t clr_dim = { bg.r, bg.g, bg.b, 253 };
+        ImGui::Checkbox("Show Team Medics##OutlinesPlayers", &CFG::Outlines_Players_Show_Teammate_Medics);
+    }
 
-	H::Draw->Rect(x, y + (nTextH + CFG::Menu_Spacing_Y), w, h, clr_dim);
+    // Buildings
+    if (ImGui::CollapsingHeader("Buildings##ESP", ImGuiTreeNodeFlags_DefaultOpen))
+    {
+        ImGui::Checkbox("Active##OutlinesBuildings", &CFG::Outlines_Buildings_Active);
+        ImGui::SliderFloat("Alpha##OutlinesBuildings", &CFG::Outlines_Buildings_Alpha, 0.0f, 1.0f, "%.1f");
 
-	if (!m_mapStates[&nVar])
-		H::Draw->OutlinedRect(x, y + (nTextH + CFG::Menu_Spacing_Y), w, h, clr);
+        // Ignore
+        ImGui::Text("Ignore:");
+        ImGui::Checkbox("Local##OutlinesBuildings", &CFG::Outlines_Buildings_Ignore_Local);
+        ImGui::SameLine();
+        ImGui::Checkbox("Enemies##OutlinesBuildings", &CFG::Outlines_Buildings_Ignore_Enemies);
+        ImGui::SameLine();
+        ImGui::Checkbox("Teammates##OutlinesBuildings", &CFG::Outlines_Buildings_Ignore_Teammates);
 
-	H::Draw->String(
-		H::Fonts->Get(EFonts::Menu),
-		x + (w / 2), y + (h / 2) + (nTextH + CFG::Menu_Spacing_Y) - 1,
-		bActive ? CFG::Menu_Text_Active : CFG::Menu_Text_Inactive,
-		POS_CENTERXY,
-		pszCurSelected
-	);
-
-	H::Draw->String(
-		H::Fonts->Get(EFonts::Menu),
-		x, y,
-		(bHovered || m_mapStates[&nVar]) ? CFG::Menu_Text_Active : CFG::Menu_Text_Inactive,
-		POS_DEFAULT,
-		szLabel
-	);
-
-	if (m_mapStates[&nVar])
-	{
-		bool bSelectRegionHovered = IsHovered(x, y + (nTextH + CFG::Menu_Spacing_Y), w, h * static_cast<int>(vecSelects.size()), &nVar);
-
-		if (H::Input->IsPressed(VK_LBUTTON) && !m_bClickConsumed && !bSelectRegionHovered) {
-			m_bClickConsumed = true;
-			m_mapStates[&nVar] = false;
-		}
-	}
-
-	if (m_mapStates[&nVar])
-	{
-		H::LateRender->OutlinedRect(x, y + (nTextH + CFG::Menu_Spacing_Y), w, h * static_cast<int>(vecSelects.size()), clr);
-
-		int real_n{ 0 };
-
-		for (int n = 0; n < static_cast<int>(vecSelects.size()); n++)
-		{
-			const auto &Select = vecSelects[n];
-
-			if (Select.second == nVar)
-			{
-				continue;
-			}
-
-			int nSelectY = (y + h + (nTextH + CFG::Menu_Spacing_Y)) + (h * real_n);
-			bool bSelectHovered = IsHovered(x, nSelectY, w, h, &nVar);
-
-			H::LateRender->Rect(x, nSelectY, w, h, clr_dim);
-
-			H::LateRender->String(
-				H::Fonts->Get(EFonts::Menu),
-				x + (w / 2), nSelectY,
-				bSelectHovered ? CFG::Menu_Text_Active : CFG::Menu_Text_Inactive,
-				POS_CENTERX,
-				Select.first, {}
-			);
-
-			if (H::Input->IsPressed(VK_LBUTTON) && !m_bClickConsumed && bSelectHovered) {
-				nVar = Select.second;
-				m_mapStates[&nVar] = false;
-				m_bClickConsumed = true;
-				break;
-			}
-
-			real_n++;
-		}
-	}
-
-	m_nCursorY += h + nTextH + CFG::Menu_Spacing_Y + CFG::Menu_Spacing_Y;
-
-	return bCallback;
+        ImGui::Checkbox("Show Team Dispensers##OutlinesBuildings", &CFG::Outlines_Buildings_Show_Teammate_Dispensers);
+    }
 }
 
-bool CMenu::SelectMulti(const char *szLabel, std::vector<std::pair<const char *, bool &>> &vecSelects)
+void CMenu::RenderOtherTab()
 {
-	bool bCallback = false;
+    // Local
+    if (ImGui::CollapsingHeader("Local", ImGuiTreeNodeFlags_DefaultOpen))
+    {
+        ImGui::Checkbox("Aimbot FOV Circle", &CFG::Visuals_Aimbot_FOV_Circle);
+        ImGui::SliderFloat("FOV Circle Alpha", &CFG::Visuals_Aimbot_FOV_Circle_Alpha, 0.01f, 1.0f, "%.2f");
+        ImGui::Checkbox("Draw Projectile Arc", &CFG::Visuals_Draw_Projectile_Arc);
+        ImGui::Checkbox("Reveal Scoreboard", &CFG::Visuals_Reveal_Scoreboard);
+        ImGui::Checkbox("Clean Screenshot", &CFG::Misc_Clean_Screenshot);
+        ImGui::SliderFloat("FOV Override", &CFG::Visuals_FOV_Override, 70.0f, 170.0f, "%.0f");
 
-	int x = m_nCursorX;
-	int y = m_nCursorY;
-	int w = CFG::Menu_Select_Width;
-	int h = CFG::Menu_Select_Height;
+        // Removals
+        ImGui::Text("Removals:");
+        ImGui::Checkbox("Scope", &CFG::Visuals_Remove_Scope);
+        ImGui::SameLine();
+        ImGui::Checkbox("Zoom", &CFG::Visuals_Remove_Zoom);
+        ImGui::SameLine();
+        ImGui::Checkbox("Punch", &CFG::Visuals_Remove_Punch);
+        ImGui::Checkbox("Screen Overlay", &CFG::Visuals_Remove_Screen_Overlay);
+        ImGui::SameLine();
+        ImGui::Checkbox("Screen Shake", &CFG::Visuals_Remove_Screen_Shake);
+        ImGui::SameLine();
+        ImGui::Checkbox("Screen Fade", &CFG::Visuals_Remove_Screen_Fade);
 
-	int nTextH = H::Fonts->Get(EFonts::Menu).m_nTall;
+        // Removals Mode
+        const char* removalsModes[] = { "Everyone", "Local Only" };
+        ImGui::Combo("Removals Mode", &CFG::Visuals_Removals_Mode, removalsModes, IM_ARRAYSIZE(removalsModes));
 
-	bool bHovered = IsHovered(x, y + (nTextH + CFG::Menu_Spacing_Y), w, h, &vecSelects);
-	bool bActive = bHovered || m_mapStates[&vecSelects];
+        // Tracer Effect
+        const char* tracerEffects[] = { "Default", "C.A.P.P.E.R", "Machina (White)", "Machina (Team)",
+                                      "Big Nasty", "Short Circuit", "Mrasmus Zap", "Random", "Random (No Zap)" };
+        ImGui::Combo("Tracer Effect", &CFG::Visuals_Tracer_Type, tracerEffects, IM_ARRAYSIZE(tracerEffects));
 
-	if (!m_bClickConsumed && bHovered && H::Input->IsPressed(VK_LBUTTON)) {
-		m_mapStates[&vecSelects] = !m_mapStates[&vecSelects];
-		m_bClickConsumed = true;
-	}
+        // Projectile Arc Color Mode
+        const char* arcColorModes[] = { "Custom", "Rainbow" };
+        ImGui::Combo("Projectile Arc Color Mode", &CFG::Visuals_Draw_Projectile_Arc_Color_Mode, arcColorModes, IM_ARRAYSIZE(arcColorModes));
 
-	Color_t clr = CFG::Menu_Accent_Primary;
-	Color_t bg{ CFG::Menu_Background };
-	Color_t clr_dim = { bg.r, bg.g, bg.b, 253 };
+        // Movement Path Style
+        const char* pathStyles[] = { "Disabled", "Line", "Dashed Line", "Alt Line" };
+        ImGui::Combo("Movement Path Style", &CFG::Visuals_Draw_Movement_Path_Style, pathStyles, IM_ARRAYSIZE(pathStyles));
+    }
 
-	H::Draw->Rect(x, y + (nTextH + CFG::Menu_Spacing_Y), w, h, clr_dim);
+    // Chat
+    if (ImGui::CollapsingHeader("Chat", ImGuiTreeNodeFlags_DefaultOpen))
+    {
+        ImGui::Checkbox("Teammate Votes", &CFG::Visuals_Chat_Teammate_Votes);
+        ImGui::Checkbox("Enemy Votes", &CFG::Visuals_Chat_Enemy_Votes);
+        ImGui::Checkbox("Player List Info", &CFG::Visuals_Chat_Player_List_Info);
+        ImGui::Checkbox("Name Tags", &CFG::Visuals_Chat_Name_Tags);
+    }
 
-	if (!m_mapStates[&vecSelects])
-		H::Draw->OutlinedRect(x, y + (nTextH + CFG::Menu_Spacing_Y), w, h, clr);
+    // World
+    if (ImGui::CollapsingHeader("World##ESP", ImGuiTreeNodeFlags_DefaultOpen))
+    {
+        ImGui::Checkbox("Flat Textures", &CFG::Visuals_Flat_Textures);
+        ImGui::Checkbox("Disable Fog", &CFG::Visuals_Remove_Fog);
+        ImGui::Checkbox("Disable Sky Fog", &CFG::Visuals_Remove_Sky_Fog);
+        ImGui::Checkbox("Distance Prop Alpha", &CFG::Visuals_Distance_Prop_Alpha);
+        ImGui::Checkbox("Don't Modulate Sky", &CFG::Visuals_World_Modulation_No_Sky_Change);
 
-	H::Draw->String(
-		H::Fonts->Get(EFonts::Menu),
-		x, y,
-		(bHovered || m_mapStates[&vecSelects]) ? CFG::Menu_Text_Active : CFG::Menu_Text_Inactive,
-		POS_DEFAULT,
-		szLabel
-	);
+        // World Modulation Mode
+        const char* worldModModes[] = { "Night Mode", "Custom Color" };
+        ImGui::Combo("World Modulation Mode", &CFG::Visuals_World_Modulation_Mode, worldModModes, IM_ARRAYSIZE(worldModModes));
 
-	std::string strSelected = {};
+        ImGui::SliderFloat("Night Mode", &CFG::Visuals_Night_Mode, 0.0f, 100.0f, "%.0f");
 
-	for (const auto &Select : vecSelects)
-	{
-		if (Select.second)
-		{
-			if (!strSelected.empty())
-				strSelected += ", ";
+        // Particles Mode
+        const char* particleModes[] = { "Original", "Custom Color", "Rainbow" };
+        ImGui::Combo("Particles Mode", &CFG::Visuals_Particles_Mode, particleModes, IM_ARRAYSIZE(particleModes));
 
-			strSelected += Select.first;
-		}
-	}
+        ImGui::SliderFloat("Particles Rainbow Rate", &CFG::Visuals_Particles_Rainbow_Rate, 1.0f, 10.0f, "%.0f");
+    }
 
-	I::MatSystemSurface->DisableClipping(false);
-	I::MatSystemSurface->SetClippingRect(x, y + (nTextH + CFG::Menu_Spacing_Y), x + (w - CFG::Menu_Spacing_X), y + (nTextH + CFG::Menu_Spacing_Y) + h);
+    // Spectator List
+    if (ImGui::CollapsingHeader("Spectator List", ImGuiTreeNodeFlags_DefaultOpen))
+    {
+        ImGui::Checkbox("Active##VisualsSpectatorList", &CFG::Visuals_SpectatorList_Active);
+        ImGui::SliderFloat("Outline Alpha##SpectatorList", &CFG::Visuals_SpectatorList_Outline_Alpha, 0.1f, 1.0f, "%.1f");
+        ImGui::SliderFloat("Background Alpha##SpectatorList", &CFG::Visuals_SpectatorList_Background_Alpha, 0.1f, 1.0f, "%.1f");
+        ImGui::SliderInt("Width##SpectatorList", &CFG::Visuals_SpectatorList_Width, 200, 1000);
+    }
 
-	H::Draw->String(
-		H::Fonts->Get(EFonts::Menu),
-		x + CFG::Menu_Spacing_X, y + (nTextH + CFG::Menu_Spacing_Y) + (h / 2) - 1,
-		bActive ? CFG::Menu_Text_Active : CFG::Menu_Text_Inactive,
-		POS_CENTERY,
-		strSelected.empty() ? "None" : strSelected.c_str()
-	);
+    // Thirdperson
+    if (ImGui::CollapsingHeader("Thirdperson", ImGuiTreeNodeFlags_DefaultOpen))
+    {
+        ImGui::Checkbox("Active##VisualsThirdperson", &CFG::Visuals_Thirdperson_Active);
+        InputKey("Toggle Key", CFG::Visuals_Thirdperson_Key);
+        ImGui::SliderFloat("Offset Forward##Thirdperson", &CFG::Visuals_Thirdperson_Offset_Forward, 10.0f, 200.0f, "%.0f");
+        ImGui::SliderFloat("Offset Right##Thirdperson", &CFG::Visuals_Thirdperson_Offset_Right, -50.0f, 50.0f, "%.0f");
+        ImGui::SliderFloat("Offset Up##Thirdperson", &CFG::Visuals_Thirdperson_Offset_Up, -50.0f, 50.0f, "%.0f");
+    }
 
-	I::MatSystemSurface->DisableClipping(true);
-
-	if (m_mapStates[&vecSelects])
-	{
-		bool bSelectRegionHovered = IsHovered(x, y + (nTextH + CFG::Menu_Spacing_Y), w, h * static_cast<int>(vecSelects.size() + 1), &vecSelects);
-
-		if (H::Input->IsPressed(VK_LBUTTON) && !m_bClickConsumed && !bSelectRegionHovered) {
-			m_bClickConsumed = true;
-			m_mapStates[&vecSelects] = false;
-		}
-	}
-
-	if (m_mapStates[&vecSelects])
-	{
-		H::LateRender->OutlinedRect(x, y + (nTextH + CFG::Menu_Spacing_Y), w, h * static_cast<int>(vecSelects.size() + 1), clr);
-
-		for (int n = 0; n < static_cast<int>(vecSelects.size()); n++)
-		{
-			const auto &Select = vecSelects[n];
-
-			int nSelectY = (y + (nTextH + CFG::Menu_Spacing_Y) + h) + (h * n);
-			bool bSelectHovered = IsHovered(x, nSelectY, w, h, &vecSelects);
-
-			H::LateRender->Rect(x, nSelectY, w, h, clr_dim);
-
-			static int nYesWidth = []() -> int {
-				int w = 0, h = 0;
-				I::MatSystemSurface->GetTextSize(H::Fonts->Get(EFonts::Menu).m_dwFont, Utils::ConvertUtf8ToWide("Yess").c_str(), w, h);
-				return w;
-			}();
-
-			H::LateRender->String(
-				H::Fonts->Get(EFonts::Menu),
-				x + CFG::Menu_Spacing_X, nSelectY,
-				bSelectHovered ? CFG::Menu_Text_Active : CFG::Menu_Text_Inactive,
-				POS_DEFAULT,
-				Select.first, { x, nSelectY, w - nYesWidth, nTextH }
-			);
-
-			H::LateRender->String(
-				H::Fonts->Get(EFonts::Menu),
-				x + w - CFG::Menu_Spacing_X, nSelectY,
-				bSelectHovered ? CFG::Menu_Text_Active : CFG::Menu_Text_Inactive,
-				POS_LEFT,
-				Select.second ? "Yes" : "No", {}
-			);
-
-			if (H::Input->IsPressed(VK_LBUTTON) && !m_bClickConsumed && bSelectHovered) {
-				Select.second = !Select.second;
-				m_bClickConsumed = true;
-			}
-		}
-	}
-
-	m_nCursorY += h + nTextH + CFG::Menu_Spacing_Y + CFG::Menu_Spacing_Y;
-
-	return bCallback;
+    // View Model
+    if (ImGui::CollapsingHeader("View Model", ImGuiTreeNodeFlags_DefaultOpen))
+    {
+        ImGui::Checkbox("Active##VisualsViewModel", &CFG::Visuals_ViewModel_Active);
+        ImGui::Checkbox("Sway", &CFG::Visuals_ViewModel_Sway);
+        ImGui::SliderFloat("Sway Scale", &CFG::Visuals_ViewModel_Sway_Scale, 0.1f, 1.0f, "%.1f");
+        ImGui::SliderFloat("Offset Forward##ViewModel", &CFG::Visuals_ViewModel_Offset_Forward, -50.00f, 50.0f, "%.0f");
+        ImGui::SliderFloat("Offset Right##ViewModel", &CFG::Visuals_ViewModel_Offset_Right, -50.0f, 50.0f, "%.0f");
+        ImGui::SliderFloat("Offset Up##ViewModel", &CFG::Visuals_ViewModel_Offset_Up, -50.0f, 50.0f, "%.0f");
+    }
 }
 
-bool CMenu::ColorPicker(const char *szLabel, Color_t &colVar)
+void CMenu::RenderOther2Tab()
 {
-	bool bCallback = false;
+    // Performance
+    if (ImGui::CollapsingHeader("Performance", ImGuiTreeNodeFlags_DefaultOpen))
+    {
+        ImGui::Checkbox("Disable Detail Props", &CFG::Visuals_Disable_Detail_Props);
+        ImGui::Checkbox("Disable Ragdolls", &CFG::Visuals_Disable_Ragdolls);
+        ImGui::Checkbox("Disable Wearables", &CFG::Visuals_Disable_Wearables);
+        ImGui::Checkbox("Disable Post Processing", &CFG::Visuals_Disable_Post_Processing);
+        ImGui::Checkbox("Disable Dropped Weapons", &CFG::Visuals_Disable_Dropped_Weapons);
+        ImGui::Checkbox("Use Simple Models", &CFG::Visuals_Simple_Models);
+    }
 
-	int x = m_nCursorX;
-	int y = m_nCursorY;
-	int w = CFG::Menu_ColorPicker_Preview_Width;
-	int h = CFG::Menu_ColorPicker_Preview_Height;
+    // Paint
+    if (ImGui::CollapsingHeader("Paint", ImGuiTreeNodeFlags_DefaultOpen))
+    {
+        ImGui::Checkbox("Active##VisualsPaint", &CFG::Visuals_Paint_Active);
+        InputKey("Key", CFG::Visuals_Paint_Key);
+        InputKey("Erase Key", CFG::Visuals_Paint_Erase_Key);
 
-	int w_with_text = [&]() -> int {
-		int w_out = 0, h_out = 0;
-		I::MatSystemSurface->GetTextSize(H::Fonts->Get(EFonts::Menu).m_dwFont, Utils::ConvertUtf8ToWide(szLabel).c_str(), w_out, h_out);
-		return w + w_out + 1;
-	}();
+        const char* pszFmt = CFG::Visuals_Paint_LifeTime <= 0.0f ? "inf" : "%.0fs";
+        ImGui::SliderFloat("Life Time##Paint", &CFG::Visuals_Paint_LifeTime, 0.0f, 10.0f, pszFmt);
+        ImGui::SliderInt("Bloom Amount##Paint", &CFG::Visuals_Paint_Bloom_Amount, 3, 10);
+    }
 
-	bool bHovered = IsHovered(x, y, w_with_text, h, &colVar);
+    // Team Well-Being
+    if (ImGui::CollapsingHeader("Team Well-Being", ImGuiTreeNodeFlags_DefaultOpen))
+    {
+        ImGui::Checkbox("Active##VisualsTeamWellBeing", &CFG::Visuals_TeamWellBeing_Active);
+        ImGui::Checkbox("Medic Only", &CFG::Visuals_TeamWellBeing_Medic_Only);
+        ImGui::SliderFloat("Background Alpha##TeamWellBeing", &CFG::Visuals_TeamWellBeing_Background_Alpha, 0.1f, 1.0f, "%.1f");
+        ImGui::SliderInt("Width##TeamWellBeing", &CFG::Visuals_TeamWellBeing_Width, 200, 1000);
+    }
 
-	if (bHovered && H::Input->IsPressed(VK_LBUTTON) && !m_bClickConsumed) {
-		m_mapStates[&colVar] = !m_mapStates[&colVar];
-		m_bClickConsumed = true;
-	}
+    // Spy Camera
+    if (ImGui::CollapsingHeader("Spy Camera", ImGuiTreeNodeFlags_DefaultOpen))
+    {
+        ImGui::Checkbox("Active##VisualsSpyCamera", &CFG::Visuals_SpyCamera_Active);
+        ImGui::SliderFloat("Background Alpha##SpyCamera", &CFG::Visuals_SpyCamera_Background_Alpha, 0.1f, 1.0f, "%.1f");
+        ImGui::SliderInt("Camera Width", &CFG::Visuals_SpyCamera_Pos_W, 100, 600);
+        ImGui::SliderInt("Camera Height", &CFG::Visuals_SpyCamera_Pos_H, 100, 600);
+        ImGui::SliderFloat("Camera FOV", &CFG::Visuals_SpyCamera_FOV, 70.0f, 170.0f, "%.0f");
+    }
 
-	if (H::Input->IsPressed(VK_ESCAPE) || H::Input->IsPressed(VK_INSERT) || H::Input->IsPressed(VK_F3))
-		m_mapStates[&colVar] = false;
+    // Spy Warning
+    if (ImGui::CollapsingHeader("Spy Warning", ImGuiTreeNodeFlags_DefaultOpen))
+    {
+        ImGui::Checkbox("Active##VisualsSpyWarning", &CFG::Viuals_SpyWarning_Active);
+        ImGui::Checkbox("Announce", &CFG::Viuals_SpyWarning_Announce);
 
-	H::Draw->Rect(x, y, w, h, colVar);
-	H::Draw->OutlinedRect(x, y, w, h, CFG::Menu_Accent_Primary);
-	H::Draw->String(
-		H::Fonts->Get(EFonts::Menu),
-		x + w + CFG::Menu_Spacing_X,
-		y + (h / 2),
-		(bHovered || m_mapStates[&colVar]) ? CFG::Menu_Text_Active : CFG::Menu_Text_Inactive,
-		POS_CENTERY, szLabel
-	);
+        // Ignore
+        ImGui::Text("Ignore:");
+        ImGui::Checkbox("Cloaked##SpyWarning", &CFG::Viuals_SpyWarning_Ignore_Cloaked);
+        ImGui::SameLine();
+        ImGui::Checkbox("Friends##SpyWarning", &CFG::Viuals_SpyWarning_Ignore_Friends);
+        ImGui::SameLine();
+        ImGui::Checkbox("Invisible##SpyWarning", &CFG::Viuals_SpyWarning_Ignore_Invisible);
+    }
 
-	if (m_mapStates[&colVar])
-	{
-		int y = m_nCursorY + h + CFG::Menu_Spacing_Y;
-		int w = 200;
-		int h = 200;
+    // Ragdolls
+    if (ImGui::CollapsingHeader("Ragdolls", ImGuiTreeNodeFlags_DefaultOpen))
+    {
+        ImGui::Checkbox("Active##VisualsRagdolls", &CFG::Visuals_Ragdolls_Active);
+        ImGui::Checkbox("No Gib", &CFG::Visuals_Ragdolls_No_Gib);
+        ImGui::Checkbox("No Death Animation", &CFG::Visuals_Ragdolls_No_Death_Anim);
 
-		bool bHovered = IsHovered(x, y, w, h, &colVar);
+        // Effect
+        const char* effects[] = { "Default", "Burning", "Electrocuted", "Ash", "Gold", "Ice", "Dissolve", "Random" };
+        ImGui::Combo("Effect", &CFG::Visuals_Ragdolls_Effect, effects, IM_ARRAYSIZE(effects));
 
-		if (H::Input->IsPressed(VK_LBUTTON) && !m_bClickConsumed && !bHovered)
-			m_mapStates[&colVar] = false;
+        ImGui::SliderFloat("Force Multiplier", &CFG::Visuals_Ragdolls_Force_Mult, 0.0f, 5.0f, "%.0f");
+    }
 
-		if (H::Input->IsHeld(VK_LBUTTON) && bHovered)
-		{
-			int x_rel = (H::Input->GetMouseX() - x);
-			int y_rel = (H::Input->GetMouseY() - y);
+    // Beams
+    if (ImGui::CollapsingHeader("Beams", ImGuiTreeNodeFlags_DefaultOpen))
+    {
+        ImGui::Checkbox("Active##VisualsBeams", &CFG::Visuals_Beams_Active);
+        ImGui::SliderFloat("Life Time##Beams", &CFG::Visuals_Beams_LifeTime, 1.0f, 10.0f, "%.0fs");
+        ImGui::SliderFloat("Start Width", &CFG::Visuals_Beams_Width, 1.0f, 10.0f, "%.0f");
+        ImGui::SliderFloat("End Width", &CFG::Visuals_Beams_EndWidth, 1.0f, 10.0f, "%.0f");
+        ImGui::SliderFloat("Fade Length", &CFG::Visuals_Beams_FadeLength, 1.0f, 10.0f, "%.0f");
+        ImGui::SliderFloat("Amplitude", &CFG::Visuals_Beams_Amplitude, 0.0f, 10.0f, "%.1f");
+        ImGui::SliderFloat("Speed", &CFG::Visuals_Beams_Speed, 0.0f, 10.0f, "%.0f");
 
-			colVar = *reinterpret_cast<Color_t *>(m_pGradient.get() + (x_rel + y_rel * 200));
-		}
-
-		H::LateRender->Texture(m_nColorPickerTextureId, x, y, w, h);
-		H::LateRender->OutlinedRect(x, y, w, h, CFG::Menu_Accent_Primary);
-	}
-
-	m_nCursorY += h + CFG::Menu_Spacing_Y;
-
-	return bCallback;
+        // Flags
+        ImGui::Text("Flags:");
+        ImGui::Checkbox("FBEAM_FADEIN", &CFG::Visuals_Beams_Flag_FBEAM_FADEIN);
+        ImGui::SameLine();
+        ImGui::Checkbox("FBEAM_FADEOUT", &CFG::Visuals_Beams_Flag_FBEAM_FADEOUT);
+        ImGui::SameLine();
+        ImGui::Checkbox("FBEAM_SINENOISE", &CFG::Visuals_Beams_Flag_FBEAM_SINENOISE);
+        ImGui::Checkbox("FBEAM_SOLID", &CFG::Visuals_Beams_Flag_FBEAM_SOLID);
+        ImGui::SameLine();
+        ImGui::Checkbox("FBEAM_SHADEIN", &CFG::Visuals_Beams_Flag_FBEAM_SHADEIN);
+        ImGui::SameLine();
+        ImGui::Checkbox("FBEAM_SHADEOUT", &CFG::Visuals_Beams_Flag_FBEAM_SHADEOUT);
+    }
 }
 
-void CMenu::MainWindow()
+void CMenu::RenderColorsTab()
 {
-	Drag(
-		CFG::Menu_Pos_X,
-		CFG::Menu_Pos_Y,
-		CFG::Menu_Width,
-		CFG::Menu_Drag_Bar_Height,
-		0
-	);
-
-	m_bMenuWindowHovered = IsHoveredSimple(
-		CFG::Menu_Pos_X,
-		CFG::Menu_Pos_Y,
-		CFG::Menu_Width,
-		CFG::Menu_Height
-	);
-
-	H::Draw->Rect(
-		CFG::Menu_Pos_X,
-		CFG::Menu_Pos_Y,
-		CFG::Menu_Width,
-		CFG::Menu_Height,
-		CFG::Menu_Background
-	);
-
-	H::Draw->OutlinedRect(
-		CFG::Menu_Pos_X,
-		CFG::Menu_Pos_Y,
-		CFG::Menu_Width,
-		CFG::Menu_Height,
-		CFG::Menu_Accent_Primary
-	);
-
-	H::Draw->Line(
-		CFG::Menu_Pos_X,
-		CFG::Menu_Pos_Y + CFG::Menu_Drag_Bar_Height - 1,
-		CFG::Menu_Pos_X + CFG::Menu_Width - 1,
-		CFG::Menu_Pos_Y + CFG::Menu_Drag_Bar_Height - 1,
-		CFG::Menu_Accent_Primary
-	);
-
-	m_nCursorX = CFG::Menu_Pos_X + CFG::Menu_Spacing_X;
-	m_nCursorY = CFG::Menu_Pos_Y + CFG::Menu_Drag_Bar_Height + CFG::Menu_Spacing_Y;
-
-	enum class EMainTabs { AIM, VISUALS, MISC, PLAYERS, CONFIGS };
-	static EMainTabs MainTab = EMainTabs::AIM;
-
-	if (Button("Aim", MainTab == EMainTabs::AIM, CFG::Menu_Tab_Button_Width))
-		MainTab = EMainTabs::AIM;
-
-	if (Button("Visuals", MainTab == EMainTabs::VISUALS, CFG::Menu_Tab_Button_Width))
-		MainTab = EMainTabs::VISUALS;
-
-	if (Button("Misc", MainTab == EMainTabs::MISC, CFG::Menu_Tab_Button_Width))
-		MainTab = EMainTabs::MISC;
-
-	if (Button("Players", MainTab == EMainTabs::PLAYERS, CFG::Menu_Tab_Button_Width))
-		MainTab = EMainTabs::PLAYERS;
-
-	if (Button("Configs", MainTab == EMainTabs::CONFIGS, CFG::Menu_Tab_Button_Width))
-		MainTab = EMainTabs::CONFIGS;
-
-	H::Draw->Line(
-		CFG::Menu_Pos_X + m_nLastButtonW + (CFG::Menu_Spacing_X * 2) - 1,
-		CFG::Menu_Pos_Y + CFG::Menu_Drag_Bar_Height,
-		CFG::Menu_Pos_X + m_nLastButtonW + (CFG::Menu_Spacing_X * 2) - 1,
-		CFG::Menu_Pos_Y + CFG::Menu_Height - 1,
-		CFG::Menu_Accent_Primary
-	);
-
-	m_nCursorX = CFG::Menu_Pos_X + m_nLastButtonW + (CFG::Menu_Spacing_X * 3) - 1;
-	m_nCursorY = CFG::Menu_Pos_Y + CFG::Menu_Drag_Bar_Height + CFG::Menu_Spacing_Y;
-
-	if (MainTab == EMainTabs::AIM)
-	{
-		enum class EAimTabs { AIMBOT, TRIGGERBOT };
-		static EAimTabs AimTab = EAimTabs::AIMBOT;
-
-		int anchor_x = m_nCursorX;
-		int anchor_y = m_nCursorY;
-
-		if (Button("Aimbot", AimTab == EAimTabs::AIMBOT))
-			AimTab = EAimTabs::AIMBOT;
-
-		m_nCursorX += m_nLastButtonW + CFG::Menu_Spacing_X;
-		m_nCursorY = anchor_y;
-
-		if (Button("Triggerbot", AimTab == EAimTabs::TRIGGERBOT))
-			AimTab = EAimTabs::TRIGGERBOT;
-
-		H::Draw->Line(
-			anchor_x - CFG::Menu_Spacing_X,
-			m_nCursorY,
-			CFG::Menu_Pos_X + CFG::Menu_Width - 1,
-			m_nCursorY,
-			CFG::Menu_Accent_Primary
-		);
-
-		m_nCursorX = anchor_x + CFG::Menu_Spacing_X;
-		m_nCursorY += CFG::Menu_Spacing_Y;
-
-		if (AimTab == EAimTabs::AIMBOT)
-		{
-			anchor_y = m_nCursorY;
-
-			GroupBoxStart("Global", 150);
-			{
-				CheckBox("Active", CFG::Aimbot_Active);
-				CheckBox("Auto Shoot", CFG::Aimbot_AutoShoot);
-				InputKey("Key", CFG::Aimbot_Key);
-
-				multiselect("Targets", AimbotTargets, {
-					{ "Players", CFG::Aimbot_Target_Players },
-					{ "Buildings", CFG::Aimbot_Target_Buildings }
-					});
-
-				multiselect("Ignore", AimbotIgnores, {
-					{ "Friends", CFG::Aimbot_Ignore_Friends },
-					{ "Invisible", CFG::Aimbot_Ignore_Invisible },
-					{ "Invulnerable", CFG::Aimbot_Ignore_Invulnerable },
-					{ "Taunting", CFG::Aimbot_Ignore_Taunting }
-					});
-			}
-			GroupBoxEnd();
-
-			GroupBoxStart("Melee", 150);
-			{
-				CheckBox("Active", CFG::Aimbot_Melee_Active);
-				CheckBox("Always Active", CFG::Aimbot_Melee_Always_Active);
-				CheckBox("Target Lag Records", CFG::Aimbot_Melee_Target_LagRecords);
-
-				CheckBox("Predict Swing", CFG::Aimbot_Melee_Predict_Swing);
-				CheckBox("Walk To Target", CFG::Aimbot_Melee_Walk_To_Target);
-				CheckBox("Whip Teammates", CFG::Aimbot_Melee_Whip_Teammates);
-
-				SelectSingle("Aim Type", CFG::Aimbot_Melee_Aim_Type, {
-					{ "Normal", 0 },
-					{ "Silent", 1 },
-					{ "Smooth", 2 }
-					});
-
-				SelectSingle("Sort", CFG::Aimbot_Melee_Sort, {
-					{ "FOV", 0 },
-					{ "Distance", 1 }
-					});
-
-				SliderFloat("FOV", CFG::Aimbot_Melee_FOV, 1.0f, 180.0f, 1.0f, "%.0f");
-				SliderFloat("Smoothing", CFG::Aimbot_Melee_Smoothing, 0.0f, 20.0f, 0.5f, "%.1f");
-				SliderFloat("Predict Swing Time", CFG::Aimbot_Melee_Predict_Swing_Amount, 0.1f, 0.2f, 0.01f, "%.2f");
-			}
-			GroupBoxEnd();
-
-			m_nCursorX += m_nLastGroupBoxW + (CFG::Menu_Spacing_X * 2);
-			m_nCursorY = anchor_y;
-
-			GroupBoxStart("Hitscan", 150);
-			{
-				CheckBox("Active", CFG::Aimbot_Hitscan_Active);
-				CheckBox("Target Lag Records", CFG::Aimbot_Hitscan_Target_LagRecords);
-				CheckBox("Target Stickies", CFG::Aimbot_Hitscan_Target_Stickies);
-
-				CheckBox("Smooth Auto Shoot", CFG::Aimbot_Hitscan_Advanced_Smooth_AutoShoot);
-				CheckBox("Auto Scope", CFG::Aimbot_Hitscan_Auto_Scope);
-				CheckBox("Wait For Headshot", CFG::Aimbot_Hitscan_Wait_For_Headshot);
-				CheckBox("Wait For Charge", CFG::Aimbot_Hitscan_Wait_For_Charge);
-				CheckBox("Minigun Tapfire", CFG::Aimbot_Hitscan_Minigun_TapFire);
-
-				SelectSingle("Aim Type", CFG::Aimbot_Hitscan_Aim_Type, {
-					{ "Normal", 0 },
-					{ "Silent", 1 },
-					{ "Smooth", 2 }
-				});
-
-				SelectSingle("Hitbox", CFG::Aimbot_Hitscan_Hitbox, {
-					{ "Head", 0 },
-					{ "Body", 1 },
-					{ "Auto", 2 }
-					});
-
-				SelectSingle("Sort", CFG::Aimbot_Hitscan_Sort, {
-					{ "FOV", 0 },
-					{ "Distance", 1 }
-					});
-
-				multiselect("Scan", HitscanScan, {
-					{ "Head", CFG::Aimbot_Hitscan_Scan_Head },
-					{ "Body", CFG::Aimbot_Hitscan_Scan_Body },
-					{ "Arms", CFG::Aimbot_Hitscan_Scan_Arms },
-					{ "Legs", CFG::Aimbot_Hitscan_Scan_Legs },
-					{ "Buildings", CFG::Aimbot_Hitscan_Scan_Buildings }
-					});
-
-				SliderFloat("FOV", CFG::Aimbot_Hitscan_FOV, 1.0f, 180.0f, 1.0f, "%.0f");
-				SliderFloat("Smoothing", CFG::Aimbot_Hitscan_Smoothing, 0.0f, 20.0f, 0.5f, "%.1f");
-			}
-			GroupBoxEnd();
-
-			m_nCursorX += m_nLastGroupBoxW + (CFG::Menu_Spacing_X * 2);
-			m_nCursorY = anchor_y;
-
-			GroupBoxStart("Projectile", 150);
-			{
-				CheckBox("Active", CFG::Aimbot_Projectile_Active);
-				CheckBox("No Spread", CFG::Aimbot_Projectile_NoSpread);
-				CheckBox("Auto Double Donk", CFG::Aimbot_Projectile_Auto_Double_Donk);
-				CheckBox("Advanced Head Aim", CFG::Aimbot_Projectile_Advanced_Head_Aim);
-				CheckBox("Ground Strafe Prediction", CFG::Aimbot_Projectile_Ground_Strafe_Prediction);
-				CheckBox("Air Strafe Prediction", CFG::Aimbot_Projectile_Air_Strafe_Prediction);
-				CheckBox("BBOX Multipoint", CFG::Aimbot_Projectile_BBOX_Multipoint);
-				SelectSingle("Rocket Splash", CFG::Aimbot_Projectile_Rocket_Splash,
-				{
-					{ "Disabled", 0 },
-					{ "Enabled", 1 },
-					{ "Preferred", 2 }
-				});
-
-				SelectSingle("Aim Type", CFG::Aimbot_Projectile_Aim_Type, {
-					{ "Normal", 0 },
-					{ "Silent", 1 }
-					});
-
-				SelectSingle("Aim Position", CFG::Aimbot_Projectile_Aim_Position, {
-					{ "Feet", 0 },
-					{ "Body", 1 },
-					{ "Head", 2 },
-					{ "Auto", 3 }
-					});
-
-				SelectSingle("Sort", CFG::Aimbot_Projectile_Sort, {
-					{ "FOV", 0 },
-					{ "Distance", 1 }
-					});
-
-				SelectSingle("Prediction Method", CFG::Aimbot_Projectile_Aim_Prediction_Method, {
-					{ "Full Acceleration", 0 },
-					{ "Current Velocity", 1 }
-				});
-
-				SliderFloat("FOV", CFG::Aimbot_Projectile_FOV, 1.0f, 180.0f, 1.0f, "%.0f");
-				SliderFloat("Max Simulation Time", CFG::Aimbot_Projectile_Max_Simulation_Time, 1.0f, 5.0f, 0.5f, "%.1fs");
-				SliderInt("Max Targets", CFG::Aimbot_Projectile_Max_Processing_Targets, 1, 6, 1);
-			}
-			GroupBoxEnd();
-		}
-
-		if (AimTab == EAimTabs::TRIGGERBOT)
-		{
-			anchor_y = m_nCursorY;
-
-			GroupBoxStart("Global", 150);
-			{
-				CheckBox("Active", CFG::Triggerbot_Active);
-				InputKey("Key", CFG::Triggerbot_Key);
-			}
-			GroupBoxEnd();
-
-			GroupBoxStart("Auto Airblast", 150);
-			{
-				CheckBox("Active", CFG::Triggerbot_AutoAirblast_Active);
-				CheckBox("Aim Assist", CFG::Triggerbot_AutoAirblast_Aim_Assist);
-
-				SelectSingle("Mode", CFG::Triggerbot_AutoAirblast_Mode,
-				{
-					{ "Legit", 0 },
-					{ "Rage", 1 }
-				});
-
-				SelectSingle("Aim Mode", CFG::Triggerbot_AutoAirblast_Aim_Mode,
-				{
-					{ "Normal", 0 },
-					{ "Silent", 1 }
-				});
-
-				multiselect("Ignore", TriggerbotAirblastIgnore,
-				{
-					{ "Rocket", CFG::Triggerbot_AutoAirblast_Ignore_Rocket },
-					{ "Sentry Rocket", CFG::Triggerbot_AutoAirblast_Ignore_SentryRocket },
-					{ "Jarate", CFG::Triggerbot_AutoAirblast_Ignore_Jar },
-					{ "Gas", CFG::Triggerbot_AutoAirblast_Ignore_JarGas },
-					{ "Milk", CFG::Triggerbot_AutoAirblast_Ignore_JarMilk },
-					{ "Arrow", CFG::Triggerbot_AutoAirblast_Ignore_Arrow },
-					{ "Flare", CFG::Triggerbot_AutoAirblast_Ignore_Flare },
-					{ "Cleaver", CFG::Triggerbot_AutoAirblast_Ignore_Cleaver },
-					{ "Healing Bolt", CFG::Triggerbot_AutoAirblast_Ignore_HealingBolt },
-					{ "Pipebomb", CFG::Triggerbot_AutoAirblast_Ignore_PipebombProjectile },
-					{ "Ball of Fire", CFG::Triggerbot_AutoAirblast_Ignore_BallOfFire },
-					{ "Energy Ring", CFG::Triggerbot_AutoAirblast_Ignore_EnergyRing },
-					{ "Energy Ball", CFG::Triggerbot_AutoAirblast_Ignore_EnergyBall },
-				});
-			}
-			GroupBoxEnd();
-
-			m_nCursorX += m_nLastGroupBoxW + (CFG::Menu_Spacing_X * 2);
-			m_nCursorY = anchor_y;
-
-			GroupBoxStart("Auto Detonate", 150);
-			{
-				CheckBox("Active", CFG::Triggerbot_AutoDetonate_Active);
-
-				multiselect("Targets", DetonateTargets, {
-					{ "Players", CFG::Triggerbot_AutoDetonate_Target_Players },
-					{ "Buildings", CFG::Triggerbot_AutoDetonate_Target_Buildings }
-					});
-
-				multiselect("Ignore", DetonateIgnores, {
-					{ "Friends", CFG::Triggerbot_AutoDetonate_Ignore_Friends },
-					{ "Invisible", CFG::Triggerbot_AutoDetonate_Ignore_Invisible },
-					{ "Invulnerable", CFG::Triggerbot_AutoDetonate_Ignore_Invulnerable }
-					});
-			}
-			GroupBoxEnd();
-
-			m_nCursorX += m_nLastGroupBoxW + (CFG::Menu_Spacing_X * 2);
-			m_nCursorY = anchor_y;
-
-			GroupBoxStart("Auto Backstab", 150);
-			{
-				CheckBox("Active", CFG::Triggerbot_AutoBackstab_Active);
-				CheckBox("Knife If Lethal", CFG::Triggerbot_AutoBackstab_Knife_If_Lethal);
-
-				SelectSingle("Mode", CFG::Triggerbot_AutoBacktab_Mode,
-				{
-					{ "Legit", 0 },
-					{ "Rage", 1 }
-				});
-
-				SelectSingle("Aim Mode", CFG::Triggerbot_AutoBacktab_Aim_Mode,
-				{
-					{ "Normal", 0 },
-					{ "Silent", 1 }
-				});
-
-				multiselect("Ignore", AutoBackstabIgnores,
-				{
-					{ "Friends", CFG::Triggerbot_AutoBackstab_Ignore_Friends },
-					{ "Invisible", CFG::Triggerbot_AutoBackstab_Ignore_Invisible },
-					{ "Invulnerable", CFG::Triggerbot_AutoBackstab_Ignore_Invulnerable }
-				});
-			}
-			GroupBoxEnd();
-		}
-	}
-
-	if (MainTab == EMainTabs::VISUALS)
-	{
-		enum class EVisualsTabs { ESP, RADAR, MATERIALS, OUTLINES, OTHER, OTHER2, COLORS };
-		static EVisualsTabs VisualsTab = EVisualsTabs::ESP;
-
-		int anchor_x = m_nCursorX;
-		int anchor_y = m_nCursorY;
-
-		if (Button("ESP", VisualsTab == EVisualsTabs::ESP))
-			VisualsTab = EVisualsTabs::ESP;
-
-		m_nCursorX += m_nLastButtonW + CFG::Menu_Spacing_X;
-		m_nCursorY = anchor_y;
-
-		if (Button("Radar", VisualsTab == EVisualsTabs::RADAR))
-			VisualsTab = EVisualsTabs::RADAR;
-
-		m_nCursorX += m_nLastButtonW + CFG::Menu_Spacing_X;
-		m_nCursorY = anchor_y;
-
-		if (Button("Materials", VisualsTab == EVisualsTabs::MATERIALS))
-			VisualsTab = EVisualsTabs::MATERIALS;
-
-		m_nCursorX += m_nLastButtonW + CFG::Menu_Spacing_X;
-		m_nCursorY = anchor_y;
-
-		if (Button("Outlines", VisualsTab == EVisualsTabs::OUTLINES))
-			VisualsTab = EVisualsTabs::OUTLINES;
-
-		m_nCursorX += m_nLastButtonW + CFG::Menu_Spacing_X;
-		m_nCursorY = anchor_y;
-
-		if (Button("Other", VisualsTab == EVisualsTabs::OTHER))
-			VisualsTab = EVisualsTabs::OTHER;
-
-		m_nCursorX += m_nLastButtonW + CFG::Menu_Spacing_X;
-		m_nCursorY = anchor_y;
-
-		if (Button("Other2", VisualsTab == EVisualsTabs::OTHER2))
-			VisualsTab = EVisualsTabs::OTHER2;
-
-		m_nCursorX += m_nLastButtonW + CFG::Menu_Spacing_X;
-		m_nCursorY = anchor_y;
-
-		if (Button("Colors", VisualsTab == EVisualsTabs::COLORS))
-			VisualsTab = EVisualsTabs::COLORS;
-
-		H::Draw->Line(
-			anchor_x - CFG::Menu_Spacing_X,
-			m_nCursorY,
-			CFG::Menu_Pos_X + CFG::Menu_Width - 1,
-			m_nCursorY,
-			CFG::Menu_Accent_Primary
-		);
-
-		m_nCursorX = anchor_x + CFG::Menu_Spacing_X;
-		m_nCursorY += CFG::Menu_Spacing_Y;
-
-		if (VisualsTab == EVisualsTabs::ESP)
-		{
-			anchor_y = m_nCursorY;
-
-			GroupBoxStart("Global", 150);
-			{
-				CheckBox("Active", CFG::ESP_Active);
-				SelectSingle("Tracer From", CFG::ESP_Tracer_From, { { "Top", 0 }, { "Center", 1 }, { "Bottom", 2 } });
-				SelectSingle("Tracer To", CFG::ESP_Tracer_To, { { "Top", 0 }, { "Center", 1 }, { "Bottom", 2 } });
-				SelectSingle("Text Color", CFG::ESP_Text_Color, { { "Default", 0 }, { "White", 1 } });
-			}
-			GroupBoxEnd();
-
-			GroupBoxStart("World", 150);
-			{
-				CheckBox("Active", CFG::ESP_World_Active);
-				SliderFloat("Alpha", CFG::ESP_World_Alpha, 0.1f, 1.0f, 0.1f, "%.1f");
-
-				multiselect("Ignore", WorldIgnore, {
-					{ "Health Packs", CFG::ESP_World_Ignore_HealthPacks },
-					{ "Ammo Packs", CFG::ESP_World_Ignore_AmmoPacks },
-					{ "Local Projectiles", CFG::ESP_World_Ignore_LocalProjectiles },
-					{ "Enemy Projectiles", CFG::ESP_World_Ignore_EnemyProjectiles },
-					{ "Teammate Projectiles", CFG::ESP_World_Ignore_TeammateProjectiles },
-					{ "Halloween Gifts", CFG::ESP_World_Ignore_Halloween_Gift },
-					{ "MVM Money", CFG::ESP_World_Ignore_MVM_Money }
-				});
-
-				multiselect("Draw", WorldDraw, {
-					{ "Name", CFG::ESP_World_Name },
-					{ "Box", CFG::ESP_World_Box },
-					{ "Tracer", CFG::ESP_World_Tracer }
-				});
-			}
-			GroupBoxEnd();
-
-			m_nCursorX += m_nLastGroupBoxW + (CFG::Menu_Spacing_X * 2);
-			m_nCursorY = anchor_y;
-
-			GroupBoxStart("Players", 150);
-			{
-				CheckBox("Active", CFG::ESP_Players_Active);
-				SliderFloat("Alpha", CFG::ESP_Players_Alpha, 0.1f, 1.0f, 0.1f, "%.1f");
-				SliderFloat("Arrow Radius", CFG::ESP_Players_Arrows_Radius, 50.0f, 400.0f, 50.0f, "%.0f");
-				SliderFloat("Arrow Max Distance", CFG::ESP_Players_Arrows_Max_Distance, 100.0f, 1000.0f, 100.0f, "%.0f");
-				SelectSingle("Bones Color", CFG::ESP_Players_Bones_Color, { { "Default", 0 }, { "White", 1 } });
-
-				multiselect("Ignore", PlayerIgnore, {
-					{ "Local", CFG::ESP_Players_Ignore_Local },
-					{ "Friends", CFG::ESP_Players_Ignore_Friends },
-					{ "Enemies", CFG::ESP_Players_Ignore_Enemies },
-					{ "Teammates", CFG::ESP_Players_Ignore_Teammates },
-					{ "Invisible", CFG::ESP_Players_Ignore_Invisible }
-					});
-
-				multiselect("Draw", PlayerDraw, {
-					{ "Name", CFG::ESP_Players_Name },
-					{ "Class", CFG::ESP_Players_Class },
-					{ "Class Icon", CFG::ESP_Players_Class_Icon },
-					{ "Health", CFG::ESP_Players_Health },
-					{ "Health Bar", CFG::ESP_Players_HealthBar },
-					{ "Uber", CFG::ESP_Players_Uber },
-					{ "Uber Bar", CFG::ESP_Players_UberBar },
-					{ "Box", CFG::ESP_Players_Box },
-					{ "Tracer", CFG::ESP_Players_Tracer },
-					{ "Bones", CFG::ESP_Players_Bones },
-					{ "Arrows", CFG::ESP_Players_Arrows },
-					{ "Conds", CFG::ESP_Players_Conds },
-					{ "Sniper Lines", CFG::ESP_Players_Sniper_Lines }
-					});
-
-				CheckBox("Show Team Medics", CFG::ESP_Players_Show_Teammate_Medics);
-			}
-			GroupBoxEnd();
-
-			m_nCursorX += m_nLastGroupBoxW + (CFG::Menu_Spacing_X * 2);
-			m_nCursorY = anchor_y;
-
-			GroupBoxStart("Buildings", 150);
-			{
-				CheckBox("Active", CFG::ESP_Buildings_Active);
-				SliderFloat("Alpha", CFG::ESP_Buildings_Alpha, 0.1f, 1.0f, 0.1f, "%.1f");
-
-				multiselect("Ignore", BuildingIgnore, {
-					{ "Local", CFG::ESP_Buildings_Ignore_Local },
-					{ "Enemies", CFG::ESP_Buildings_Ignore_Enemies },
-					{ "Teammates", CFG::ESP_Buildings_Ignore_Teammates }
-					});
-
-				multiselect("Draw", BuildingDraw, {
-					{ "Name", CFG::ESP_Buildings_Name },
-					{ "Health", CFG::ESP_Buildings_Health },
-					{ "Health Bar", CFG::ESP_Buildings_HealthBar },
-					{ "Level", CFG::ESP_Buildings_Level },
-					{ "Level Bar", CFG::ESP_Buildings_LevelBar },
-					{ "Box", CFG::ESP_Buildings_Box },
-					{ "Tracer", CFG::ESP_Buildings_Tracer },
-					{ "Conds", CFG::ESP_Buildings_Conds }
-					});
-
-				CheckBox("Show Team Dispensers", CFG::ESP_Buildings_Show_Teammate_Dispensers);
-			}
-			GroupBoxEnd();
-		}
-
-		if (VisualsTab == EVisualsTabs::RADAR)
-		{
-			anchor_x = m_nCursorX;
-			anchor_y = m_nCursorY;
-
-			GroupBoxStart("Global", 150);
-			{
-				CheckBox("Active", CFG::Radar_Active);
-				SelectSingle("Style", CFG::Radar_Style, { { "Rectangle", 0 }, { "Circle", 1 } });
-				SliderInt("Size", CFG::Radar_Size, 100, 1000, 25);
-				SliderInt("Icon Size", CFG::Radar_Icon_Size, 18, 36, 2);
-				SliderFloat("Radius", CFG::Radar_Radius, 100.0f, 3000.0f, 50.0f, "%.0f");
-				SliderFloat("Cross Alpha", CFG::Radar_Cross_Alpha, 0.0f, 1.0f, 0.1f, "%.1f");
-				SliderFloat("Outline Alpha", CFG::Radar_Outline_Alpha, 0.0f, 1.0f, 0.1f, "%.1f");
-				SliderFloat("Background Alpha", CFG::Radar_Background_Alpha, 0.0f, 1.0f, 0.1f, "%.1f");
-			}
-			GroupBoxEnd();
-
-			m_nCursorX += m_nLastGroupBoxW + (CFG::Menu_Spacing_X * 2);
-			m_nCursorY = anchor_y;
-
-			GroupBoxStart("Players", 150);
-			{
-				CheckBox("Active", CFG::Radar_Players_Active);
-
-				multiselect("Ignore", PlayerIgnore, {
-					{ "Local", CFG::Radar_Players_Ignore_Local },
-					{ "Friends", CFG::Radar_Players_Ignore_Friends },
-					{ "Enemies", CFG::Radar_Players_Ignore_Enemies },
-					{ "Teammates", CFG::Radar_Players_Ignore_Teammates },
-					{ "Invisible", CFG::Radar_Players_Ignore_Invisible }
-					});
-
-				CheckBox("Show Team Medics", CFG::Radar_Players_Show_Teammate_Medics);
-			}
-			GroupBoxEnd();
-
-			GroupBoxStart("Buildings", 150);
-			{
-				CheckBox("Active", CFG::Radar_Buildings_Active);
-
-				multiselect("Ignore", BuildingIgnore, {
-					{ "Local", CFG::Radar_Buildings_Ignore_Local },
-					{ "Enemies", CFG::Radar_Buildings_Ignore_Enemies },
-					{ "Teammates", CFG::Radar_Buildings_Ignore_Teammates }
-					});
-
-				CheckBox("Show Team Dispensers", CFG::Radar_Buildings_Show_Teammate_Dispensers);
-			}
-			GroupBoxEnd();
-
-			GroupBoxStart("World", 150);
-			{
-				CheckBox("Active", CFG::Radar_World_Active);
-
-				multiselect("Ignore", BuildingIgnore, {
-					{ "Health Packs", CFG::Radar_World_Ignore_HealthPacks },
-					{ "Ammo Packs", CFG::Radar_World_Ignore_AmmoPacks },
-					{ "Halloween Gifts", CFG::Radar_World_Ignore_Halloween_Gift },
-					{ "MVM Money", CFG::Radar_World_Ignore_MVM_Money }
-				});
-			}
-			GroupBoxEnd();
-		}
-
-		if (VisualsTab == EVisualsTabs::MATERIALS)
-		{
-			anchor_x = m_nCursorX;
-			anchor_y = m_nCursorY;
-
-			GroupBoxStart("Global", 150);
-			{
-				CheckBox("Active", CFG::Materials_Active);
-			}
-			GroupBoxEnd();
-
-			GroupBoxStart("World", 150);
-			{
-				CheckBox("Active", CFG::Materials_World_Active);
-				CheckBox("No Depth", CFG::Materials_World_No_Depth);
-				SliderFloat("Alpha", CFG::Materials_World_Alpha, 0.0f, 1.0f, 0.1f, "%.1f");
-
-				SelectSingle("Material", CFG::Materials_World_Material, {
-					{ "Original", 0 },
-					{ "Flat", 1 },
-					{ "Shaded", 2 },
-					{ "Glossy", 3 },
-					{ "Glow", 4 },
-					{ "Plastic", 5 }
-					});
-
-				multiselect("Ignore", WorldIgnore, {
-					{ "Health Packs", CFG::Materials_World_Ignore_HealthPacks },
-					{ "Ammo Packs", CFG::Materials_World_Ignore_AmmoPacks },
-					{ "Local Projectiles", CFG::Materials_World_Ignore_LocalProjectiles },
-					{ "Enemy Projectiles", CFG::Materials_World_Ignore_EnemyProjectiles },
-					{ "Teammate Projectiles", CFG::Materials_World_Ignore_TeammateProjectiles },
-					{ "Halloween Gifts", CFG::Materials_World_Ignore_Halloween_Gift },
-					{ "MVM Money", CFG::Materials_World_Ignore_MVM_Money }
-					});
-			}
-			GroupBoxEnd();
-
-			GroupBoxStart("View Model", 150);
-			{
-				CheckBox("Active", CFG::Materials_ViewModel_Active);
-
-				SliderFloat("Hands Alpha", CFG::Materials_ViewModel_Hands_Alpha, 0.0f, 1.0f, 0.1f, "%.1f");
-
-				SelectSingle("Hands Material", CFG::Materials_ViewModel_Hands_Material, {
-					{ "Original", 0 },
-					{ "Flat", 1 },
-					{ "Shaded", 2 },
-					{ "Glossy", 3 },
-					{ "Glow", 4 },
-					{ "Plastic", 5 }
-				});
-
-				SliderFloat("Weapon Alpha", CFG::Materials_ViewModel_Weapon_Alpha, 0.0f, 1.0f, 0.1f, "%.1f");
-
-				SelectSingle("Weapon Material", CFG::Materials_ViewModel_Weapon_Material, {
-					{ "Original", 0 },
-					{ "Flat", 1 },
-					{ "Shaded", 2 },
-					{ "Glossy", 3 },
-					{ "Glow", 4 },
-					{ "Plastic", 5 }
-				});
-			}
-			GroupBoxEnd();
-
-			m_nCursorX += m_nLastGroupBoxW + (CFG::Menu_Spacing_X * 2);
-			m_nCursorY = anchor_y;
-
-			GroupBoxStart("Players", 150);
-			{
-				CheckBox("Active", CFG::Materials_Players_Active);
-				CheckBox("No Depth", CFG::Materials_Players_No_Depth);
-				SliderFloat("Alpha", CFG::Materials_Players_Alpha, 0.0f, 1.0f, 0.1f, "%.1f");
-
-				SelectSingle("Material", CFG::Materials_Players_Material, {
-					{ "Original", 0 },
-					{ "Flat", 1 },
-					{ "Shaded", 2 },
-					{ "Glossy", 3 },
-					{ "Glow", 4 },
-					{ "Plastic", 5 }
-					});
-
-				SelectSingle("Lag Records Style", CFG::Materials_Players_LagRecords_Style, {
-					{ "All", 0 },
-					{ "Last Only", 1 }
-					});
-
-				multiselect("Ignore", PlayerIgnore, {
-					{ "Local", CFG::Materials_Players_Ignore_Local },
-					{ "Friends", CFG::Materials_Players_Ignore_Friends },
-					{ "Enemies", CFG::Materials_Players_Ignore_Enemies },
-					{ "Teammates", CFG::Materials_Players_Ignore_Teammates },
-					{ "Lag Records", CFG::Materials_Players_Ignore_LagRecords }
-					});
-
-				CheckBox("Show Team Medics", CFG::Materials_Players_Show_Teammate_Medics);
-			}
-			GroupBoxEnd();
-
-			m_nCursorX += m_nLastGroupBoxW + (CFG::Menu_Spacing_X * 2);
-			m_nCursorY = anchor_y;
-
-			GroupBoxStart("Buildings", 150);
-			{
-				CheckBox("Active", CFG::Materials_Buildings_Active);
-				CheckBox("No Depth", CFG::Materials_Buildings_No_Depth);
-				SliderFloat("Alpha", CFG::Materials_Buildings_Alpha, 0.0f, 1.0f, 0.1f, "%.1f");
-
-				SelectSingle("Material", CFG::Materials_Buildings_Material, {
-					{ "Original", 0 },
-					{ "Flat", 1 },
-					{ "Shaded", 2 },
-					{ "Glossy", 3 },
-					{ "Glow", 4 },
-					{ "Plastic", 5 }
-					});
-
-				multiselect("Ignore", BuildingIgnore, {
-					{ "Local", CFG::Materials_Buildings_Ignore_Local },
-					{ "Enemies", CFG::Materials_Buildings_Ignore_Enemies },
-					{ "Teammates", CFG::Materials_Buildings_Ignore_Teammates }
-					});
-
-				CheckBox("Show Team Dispensers", CFG::Materials_Buildings_Show_Teammate_Dispensers);
-			}
-			GroupBoxEnd();
-		}
-
-		if (VisualsTab == EVisualsTabs::OUTLINES)
-		{
-			anchor_x = m_nCursorX;
-			anchor_y = m_nCursorY;
-
-			GroupBoxStart("Global", 150);
-			{
-				CheckBox("Active", CFG::Outlines_Active);
-
-				SelectSingle("Style", CFG::Outlines_Style, {
-					{ "Bloom", 0 },
-					{ "Crisp", 1 },
-					{ "Cartoony", 2 },
-					{ "Cartoony Alt", 3 }
-				});
-
-				SliderInt("Bloom Amount", CFG::Outlines_Bloom_Amount, 1, 10, 1);
-			}
-			GroupBoxEnd();
-
-			GroupBoxStart("World", 150);
-			{
-				CheckBox("Active", CFG::Outlines_World_Active);
-				SliderFloat("Alpha", CFG::Outlines_World_Alpha, 0.0f, 1.0f, 0.1f, "%.1f");
-
-				multiselect("Ignore", WorldIgnore, {
-					{ "Health Packs", CFG::Outlines_World_Ignore_HealthPacks },
-					{ "Ammo Packs", CFG::Outlines_World_Ignore_AmmoPacks },
-					{ "Local Projectiles", CFG::Outlines_World_Ignore_LocalProjectiles },
-					{ "Enemy Projectiles", CFG::Outlines_World_Ignore_EnemyProjectiles },
-					{ "Teammate Projectiles", CFG::Outlines_World_Ignore_TeammateProjectiles },
-					{ "Halloween Gifts", CFG::Outlines_World_Ignore_Halloween_Gift },
-					{ "MVM Money", CFG::Outlines_World_Ignore_MVM_Money }
-					});
-			}
-			GroupBoxEnd();
-
-			m_nCursorX += m_nLastGroupBoxW + (CFG::Menu_Spacing_X * 2);
-			m_nCursorY = anchor_y;
-
-			GroupBoxStart("Players", 150);
-			{
-				CheckBox("Active", CFG::Outlines_Players_Active);
-				SliderFloat("Alpha", CFG::Outlines_Players_Alpha, 0.0f, 1.0f, 0.1f, "%.1f");
-
-				multiselect("Ignore", PlayerIgnore, {
-					{ "Local", CFG::Outlines_Players_Ignore_Local },
-					{ "Friends", CFG::Outlines_Players_Ignore_Friends },
-					{ "Enemies", CFG::Outlines_Players_Ignore_Enemies },
-					{ "Teammates", CFG::Outlines_Players_Ignore_Teammates }
-					});
-
-				CheckBox("Show Team Medics", CFG::Outlines_Players_Show_Teammate_Medics);
-			}
-			GroupBoxEnd();
-
-			m_nCursorX += m_nLastGroupBoxW + (CFG::Menu_Spacing_X * 2);
-			m_nCursorY = anchor_y;
-
-			GroupBoxStart("Buildings", 150);
-			{
-				CheckBox("Active", CFG::Outlines_Buildings_Active);
-				SliderFloat("Alpha", CFG::Outlines_Buildings_Alpha, 0.0f, 1.0f, 0.1f, "%.1f");
-
-				multiselect("Ignore", BuildingIgnore, {
-					{ "Local", CFG::Outlines_Buildings_Ignore_Local },
-					{ "Enemies", CFG::Outlines_Buildings_Ignore_Enemies },
-					{ "Teammates", CFG::Outlines_Buildings_Ignore_Teammates }
-					});
-
-				CheckBox("Show Team Dispensers", CFG::Outlines_Buildings_Show_Teammate_Dispensers);
-			}
-			GroupBoxEnd();
-		}
-
-		if (VisualsTab == EVisualsTabs::OTHER)
-		{
-			anchor_x = m_nCursorX;
-			anchor_y = m_nCursorY;
-
-			GroupBoxStart("Local", 150);
-			{
-				CheckBox("Aimbot FOV Circle", CFG::Visuals_Aimbot_FOV_Circle);
-				SliderFloat("FOV Circle Alpha", CFG::Visuals_Aimbot_FOV_Circle_Alpha, 0.01f, 1.0f, 0.01f, "%.2f");
-				CheckBox("Draw Projectile Arc", CFG::Visuals_Draw_Projectile_Arc);
-				CheckBox("Reveal Scoreboard", CFG::Visuals_Reveal_Scoreboard);
-				CheckBox("Clean Screenshot", CFG::Misc_Clean_Screenshot);
-				SliderFloat("FOV Override", CFG::Visuals_FOV_Override, 70.0f, 170.0f, 1.0f, "%.0f");
-
-				multiselect("Removals", LocalRemovals, {
-					{ "Scope", CFG::Visuals_Remove_Scope },
-					{ "Zoom", CFG::Visuals_Remove_Zoom },
-					{ "Punch", CFG::Visuals_Remove_Punch },
-					{ "Screen Overlay", CFG::Visuals_Remove_Screen_Overlay },
-					{ "Screen Shake", CFG::Visuals_Remove_Screen_Shake },
-					{ "Screen Fade", CFG::Visuals_Remove_Screen_Fade }
-				});
-
-				SelectSingle("Removals Mode", CFG::Visuals_Removals_Mode, {
-					{ "Everyone", 0 },
-					{ "Local Only", 1 }
-					});
-
-				SelectSingle("Tracer Effect", CFG::Visuals_Tracer_Type, {
-					{ "Default", 0 },
-					{ "C.A.P.P.E.R", 1 },
-					{ "Machina (White)", 2 },
-					{ "Machina (Team)", 3 },
-					{ "Big Nasty", 4 },
-					{ "Short Circuit", 5 },
-					{ "Mrasmus Zap", 6 },
-					{ "Random", 7 },
-					{ "Random (No Zap)", 8 }
-					});
-
-				SelectSingle("Projectile Arc Color Mode", CFG::Visuals_Draw_Projectile_Arc_Color_Mode,
-				{
-					{ "Custom", 0 },
-					{ "Rainbow", 1 }
-				});
-
-				SelectSingle("Movement Path Style", CFG::Visuals_Draw_Movement_Path_Style,
-				{
-					{ "Disabled", 0 },
-					{ "Line", 1 },
-					{ "Dashed Line", 2 },
-					{ "Alt Line", 3 }
-				});
-			}
-			GroupBoxEnd();
-
-			GroupBoxStart("Chat", 150);
-			{
-				CheckBox("Teammate Votes", CFG::Visuals_Chat_Teammate_Votes);
-				CheckBox("Enemy Votes", CFG::Visuals_Chat_Enemy_Votes);
-				CheckBox("Player List Info", CFG::Visuals_Chat_Player_List_Info);
-				CheckBox("Name Tags", CFG::Visuals_Chat_Name_Tags);
-			}
-			GroupBoxEnd();
-
-			m_nCursorX += m_nLastGroupBoxW + (CFG::Menu_Spacing_X * 2);
-			m_nCursorY = anchor_y;
-
-			GroupBoxStart("World", 150);
-			{
-				CheckBox("Flat Textures", CFG::Visuals_Flat_Textures);
-				CheckBox("Disable Fog", CFG::Visuals_Remove_Fog);
-				CheckBox("Disable Sky Fog", CFG::Visuals_Remove_Sky_Fog);
-				CheckBox("Distance Prop Alpha", CFG::Visuals_Distance_Prop_Alpha);
-				CheckBox("Don't Modulate Sky", CFG::Visuals_World_Modulation_No_Sky_Change);
-
-				SelectSingle("World Modulation Mode", CFG::Visuals_World_Modulation_Mode,
-				{
-					{ "Night Mode", 0 },
-					{ "Custom Color", 1 }
-				});
-
-				SliderFloat("Night Mode", CFG::Visuals_Night_Mode, 0.0f, 100.0f, 1.0f, "%.0f");
-
-				SelectSingle("Particles Mode", CFG::Visuals_Particles_Mode, {
-					{ "Original", 0 },
-					{ "Custom Color", 1 },
-					{ "Rainbow", 2 }
-				});
-
-				SliderFloat("Particles Rainbow Rate", CFG::Visuals_Particles_Rainbow_Rate, 1.0f, 10.0f, 1.0f, "%.0f");
-			}
-			GroupBoxEnd();
-
-			GroupBoxStart("Spectator List", 150);
-			{
-				CheckBox("Active", CFG::Visuals_SpectatorList_Active);
-				SliderFloat("Outline Alpha", CFG::Visuals_SpectatorList_Outline_Alpha, 0.1f, 1.0f, 0.1f, "%.1f");
-				SliderFloat("Background Alpha", CFG::Visuals_SpectatorList_Background_Alpha, 0.1f, 1.0f, 0.1f, "%.1f");
-				SliderInt("Width", CFG::Visuals_SpectatorList_Width, 200, 1000, 1);
-			}
-			GroupBoxEnd();
-
-			m_nCursorX += m_nLastGroupBoxW + (CFG::Menu_Spacing_X * 2);
-			m_nCursorY = anchor_y;
-
-			GroupBoxStart("Thirdperson", 150);
-			{
-				CheckBox("Active", CFG::Visuals_Thirdperson_Active);
-				InputKey("Toggle Key", CFG::Visuals_Thirdperson_Key);
-				SliderFloat("Offset Forward", CFG::Visuals_Thirdperson_Offset_Forward, 10.0f, 200.0f, 1.0f, "%.0f");
-				SliderFloat("Offset Right", CFG::Visuals_Thirdperson_Offset_Right, -50.0f, 50.0f, 1.0f, "%.0f");
-				SliderFloat("Offset Up", CFG::Visuals_Thirdperson_Offset_Up, -50.0f, 50.0f, 1.0f, "%.0f");
-			}
-			GroupBoxEnd();
-
-			GroupBoxStart("View Model", 150);
-			{
-				CheckBox("Active", CFG::Visuals_ViewModel_Active);
-				CheckBox("Sway", CFG::Visuals_ViewModel_Sway);
-				SliderFloat("Sway Scale", CFG::Visuals_ViewModel_Sway_Scale, 0.1f, 1.0f, 0.1f, "%.1f");
-				SliderFloat("Offset Forward", CFG::Visuals_ViewModel_Offset_Forward, -50.00f, 50.0f, 1.0f, "%.0f");
-				SliderFloat("Offset Right", CFG::Visuals_ViewModel_Offset_Right, -50.0f, 50.0f, 1.0f, "%.0f");
-				SliderFloat("Offset Up", CFG::Visuals_ViewModel_Offset_Up, -50.0f, 50.0f, 1.0f, "%.0f");
-			}
-			GroupBoxEnd();
-		}
-
-		if (VisualsTab == EVisualsTabs::OTHER2)
-		{
-			anchor_x = m_nCursorX;
-			anchor_y = m_nCursorY;
-
-			GroupBoxStart("Performance", 150);
-			{
-				CheckBox("Disable Detail Props", CFG::Visuals_Disable_Detail_Props);
-				CheckBox("Disable Ragdolls", CFG::Visuals_Disable_Ragdolls);
-				CheckBox("Disable Wearables", CFG::Visuals_Disable_Wearables);
-				CheckBox("Disable Post Processing", CFG::Visuals_Disable_Post_Processing);
-				CheckBox("Disable Dropped Weapons", CFG::Visuals_Disable_Dropped_Weapons);
-				CheckBox("Use Simple Models", CFG::Visuals_Simple_Models);
-			}
-			GroupBoxEnd();
-
-			GroupBoxStart("Paint", 150);
-			{
-				CheckBox("Active", CFG::Visuals_Paint_Active);
-				InputKey("Key", CFG::Visuals_Paint_Key);
-				InputKey("Erase Key", CFG::Visuals_Paint_Erase_Key);
-				const char *pszFmt = CFG::Visuals_Paint_LifeTime <= 0.0f ? "inf" : "%.0fs";
-				SliderFloat("Life Time", CFG::Visuals_Paint_LifeTime, 0.0f, 10.0f, 1.0f, pszFmt);
-				SliderInt("Bloom Amount", CFG::Visuals_Paint_Bloom_Amount, 3, 10, 1);
-			}
-			GroupBoxEnd();
-
-			GroupBoxStart("Team Well-Being", 150);
-			{
-				CheckBox("Active", CFG::Visuals_TeamWellBeing_Active);
-				CheckBox("Medic Only", CFG::Visuals_TeamWellBeing_Medic_Only);
-				SliderFloat("Background Alpha", CFG::Visuals_TeamWellBeing_Background_Alpha, 0.1f, 1.0f, 0.1f, "%.1f");
-				SliderInt("Width", CFG::Visuals_TeamWellBeing_Width, 200, 1000, 1);
-			}
-			GroupBoxEnd();
-
-			m_nCursorX += m_nLastGroupBoxW + (CFG::Menu_Spacing_X * 2);
-			m_nCursorY = anchor_y;
-
-			GroupBoxStart("Spy Camera", 150);
-			{
-				CheckBox("Active", CFG::Visuals_SpyCamera_Active);
-				SliderFloat("Background Alpha", CFG::Visuals_SpyCamera_Background_Alpha, 0.1f, 1.0f, 0.1f, "%.1f");
-				SliderInt("Camera Width", CFG::Visuals_SpyCamera_Pos_W, 100, 600, 10);
-				SliderInt("Camera Height", CFG::Visuals_SpyCamera_Pos_H, 100, 600, 10);
-				SliderFloat("Camera FOV", CFG::Visuals_SpyCamera_FOV, 70.0f, 170.0f, 1.0f, "%.0f");
-			}
-			GroupBoxEnd();
-
-			GroupBoxStart("Spy Warning", 150);
-			{
-				CheckBox("Active", CFG::Viuals_SpyWarning_Active);
-				CheckBox("Announce", CFG::Viuals_SpyWarning_Announce);
-
-				multiselect("Ignore", SpyWarningIgnore, {
-					{ "Cloaked", CFG::Viuals_SpyWarning_Ignore_Cloaked },
-					{ "Friends", CFG::Viuals_SpyWarning_Ignore_Friends },
-					{ "Invisible", CFG::Viuals_SpyWarning_Ignore_Invisible }
-				});
-			}
-			GroupBoxEnd();
-
-			GroupBoxStart("Ragdolls", 150);
-			{
-				CheckBox("Active", CFG::Visuals_Ragdolls_Active);
-				CheckBox("No Gib", CFG::Visuals_Ragdolls_No_Gib);
-				CheckBox("No Death Animation", CFG::Visuals_Ragdolls_No_Death_Anim);
-
-				SelectSingle("Effect", CFG::Visuals_Ragdolls_Effect, {
-					{ "Default", 0 },
-					{ "Burning", 1 },
-					{ "Electrocuted", 2 },
-					{ "Ash", 3 },
-					{ "Gold", 4 },
-					{ "Ice", 5 },
-					{ "Dissolve", 6 },
-					{ "Random", 7 }
-					});
-
-				SliderFloat("Force Multiplier", CFG::Visuals_Ragdolls_Force_Mult, 0.0f, 5.0f, 1.0f, "%.0f");
-			}
-			GroupBoxEnd();
-
-			m_nCursorX += m_nLastGroupBoxW + (CFG::Menu_Spacing_X * 2);
-			m_nCursorY = anchor_y;
-
-			GroupBoxStart("Beams", 150);
-			{
-				CheckBox("Active", CFG::Visuals_Beams_Active);
-				SliderFloat("Life Time", CFG::Visuals_Beams_LifeTime, 1.0f, 10.0f, 1.0f, "%.0fs");
-				SliderFloat("Start Width", CFG::Visuals_Beams_Width, 1.0f, 10.0f, 1.0f, "%.0f");
-				SliderFloat("End Width", CFG::Visuals_Beams_EndWidth, 1.0f, 10.0f, 1.0f, "%.0f");
-				SliderFloat("Fade Length", CFG::Visuals_Beams_FadeLength, 1.0f, 10.0f, 1.0f, "%.0f");
-				SliderFloat("Amplitude", CFG::Visuals_Beams_Amplitude, 0.0f, 10.0f, 0.1f, "%.1f");
-				SliderFloat("Speed", CFG::Visuals_Beams_Speed, 0.0f, 10.0f, 1.0f, "%.0f");
-
-				multiselect("Flags", BeamFlags, {
-					{ "FBEAM_FADEIN", CFG::Visuals_Beams_Flag_FBEAM_FADEIN },
-					{ "FBEAM_FADEOUT", CFG::Visuals_Beams_Flag_FBEAM_FADEOUT },
-					{ "FBEAM_SINENOISE", CFG::Visuals_Beams_Flag_FBEAM_SINENOISE },
-					{ "FBEAM_SOLID", CFG::Visuals_Beams_Flag_FBEAM_SOLID },
-					{ "FBEAM_SHADEIN", CFG::Visuals_Beams_Flag_FBEAM_SHADEIN },
-					{ "FBEAM_SHADEOUT", CFG::Visuals_Beams_Flag_FBEAM_SHADEOUT }
-					});
-			}
-			GroupBoxEnd();
-		}
-
-		if (VisualsTab == EVisualsTabs::COLORS)
-		{
-			auto anchor_y{ m_nCursorY };
-
-			GroupBoxStart("Menu", 150);
-			{
-				ColorPicker("Accent Primary", CFG::Menu_Accent_Primary);
-				ColorPicker("Accent Secondary", CFG::Menu_Accent_Secondary);
-				ColorPicker("Background", CFG::Menu_Background);
-				CheckBox("Menu Snow", CFG::Menu_Snow);
-			}
-			GroupBoxEnd();
-
-			GroupBoxStart("Visuals", 150);
-			{
-				ColorPicker("Hands", CFG::Color_Hands);
-				ColorPicker("Hands Sheen", CFG::Color_Hands_Sheen);
-				ColorPicker("Weapon", CFG::Color_Weapon);
-				ColorPicker("Weapon Sheen", CFG::Color_Weapon_Sheen);
-				ColorPicker("Projectile Arc", CFG::Color_Projectile_Arc);
-			}
-			GroupBoxEnd();
-
-			m_nCursorX += m_nLastGroupBoxW + (CFG::Menu_Spacing_X * 2);
-			m_nCursorY = anchor_y;
-
-			GroupBoxStart("Visuals", 150);
-			{
-				ColorPicker("Local", CFG::Color_Local);
-				ColorPicker("Friend", CFG::Color_Friend);
-				ColorPicker("Enemy", CFG::Color_Enemy);
-				ColorPicker("Teammate", CFG::Color_Teammate);
-				ColorPicker("Target", CFG::Color_Target);
-				ColorPicker("Invulnerable", CFG::Color_Invulnerable);
-				ColorPicker("Cheater", CFG::Color_Cheater);
-				ColorPicker("Retard Legit", CFG::Color_RetardLegit);
-				ColorPicker("Invisible", CFG::Color_Invisible);
-				ColorPicker("Over Heal", CFG::Color_OverHeal);
-				ColorPicker("Uber", CFG::Color_Uber);
-				ColorPicker("Conds", CFG::Color_Conds);
-				ColorPicker("Health Pack", CFG::Color_HealthPack);
-				ColorPicker("Ammo Pack", CFG::Color_AmmoPack);
-				ColorPicker("Beams", CFG::Color_Beams);
-				ColorPicker("Halloween Gifts", CFG::Color_Halloween_Gift);
-				ColorPicker("MVM Money", CFG::Color_MVM_Money);
-				ColorPicker("Particles", CFG::Color_Particles);
-				ColorPicker("World Modulation", CFG::Color_World);
-				ColorPicker("Sky Modulation", CFG::Color_Sky);
-				ColorPicker("Prop Modulation", CFG::Color_Props);
-			}
-			GroupBoxEnd();
-		}
-	}
-	
-	if (MainTab == EMainTabs::MISC)
-	{
-		m_nCursorX += CFG::Menu_Spacing_X;
-
-		int anchor_x = m_nCursorX;
-		int anchor_y = m_nCursorY;
-
-		GroupBoxStart("Misc", 160);
-		{
-			CheckBox("Bunnyhop", CFG::Misc_Bunnyhop);
-			CheckBox("Choke on Bunnyhop", CFG::Misc_Choke_On_Bhop);
-			CheckBox("Bypass sv_pure", CFG::Misc_Pure_Bypass);
-			CheckBox("Noise Maker Spam", CFG::Misc_NoiseMaker_Spam);
-			CheckBox("No Push", CFG::Misc_No_Push);
-			CheckBox("Giant Weapon Sounds", CFG::Misc_MVM_Giant_Weapon_Sounds);
-			CheckBox("Equip Region Unlock", CFG::Misc_Equip_Region_Unlock);
-			CheckBox("Fast Stop", CFG::Misc_Fast_Stop);
-			CheckBox("Anti Server Angle Change", CFG::Misc_Prevent_Server_Angle_Change);
-
-			if (Button("Unlock CVars"))
-			{
-				auto iter = ICvar::Iterator(I::CVar);
-
-				for (iter.SetFirst(); iter.IsValid(); iter.Next())
-				{
-					auto cmd = iter.Get();
-
-					if (!cmd)
-						continue;
-
-					if (cmd->m_nFlags & FCVAR_DEVELOPMENTONLY)
-						cmd->m_nFlags &= ~FCVAR_DEVELOPMENTONLY;
-
-					if (cmd->m_nFlags & FCVAR_HIDDEN)
-						cmd->m_nFlags &= ~FCVAR_HIDDEN;
-
-					if (cmd->m_nFlags & FCVAR_PROTECTED)
-						cmd->m_nFlags &= ~FCVAR_PROTECTED;
-
-					if (cmd->m_nFlags & FCVAR_CHEAT)
-						cmd->m_nFlags &= ~FCVAR_CHEAT;
-				}
-			}
-		}
-		GroupBoxEnd();
-		
-		GroupBoxStart("Game", 160);
-		{
-			//at this point this does so much and lots of stuff relies on it, better make it impossible to turn off
-			/*if (CheckBox("Accuracy Improvements", CFG::Misc_Accuracy_Improvements))
-			{
-				if (I::EngineClient->IsConnected())
-				{
-					I::EngineClient->ClientCmd_Unrestricted("retry");
-				}
-			}*/
-
-			CheckBox("Network Fix", CFG::Misc_Ping_Reducer);
-			CheckBox("Prediction Error Jitter Fix", CFG::Misc_Pred_Error_Jitter_Fix);
-			CheckBox("ComputeLightingOrigin Fix", CFG::Misc_ComputeLightingOrigin_Fix);
-			CheckBox("SetupBones Optimization", CFG::Misc_SetupBones_Optimization);
-		}
-		GroupBoxEnd();
-
-		GroupBoxStart("Mann vs. Machine", 160);
-		{
-			InputKey("Instant Respawn", CFG::Misc_MVM_Instant_Respawn_Key);
-			CheckBox("Instant Revive", CFG::Misc_MVM_Instant_Revive);
-		}
-		GroupBoxEnd();
-
-		GroupBoxStart("Chat", 160);
-		{
-			CheckBox("Medieval", CFG::Misc_Chat_Medieval);
-			CheckBox("OwO-ify", CFG::Misc_Chat_Owoify);
-		}
-		GroupBoxEnd();
-
-		m_nCursorX += m_nLastGroupBoxW + (CFG::Menu_Spacing_X * 2);
-		m_nCursorY = anchor_y;
-
-		GroupBoxStart("Taunt", 150);
-		{
-			CheckBox("Taunt Slide", CFG::Misc_Taunt_Slide);
-			CheckBox("Taunt Control", CFG::Misc_Taunt_Slide_Control);
-			InputKey("Taunt Spin Key", CFG::Misc_Taunt_Spin_Key);
-			SliderFloat("Taunt Spin Speed", CFG::Misc_Taunt_Spin_Speed, -50.0f, 50.0f, 1.0f, "%.0f");
-			CheckBox("Taunt Spin Sine", CFG::Misc_Taunt_Spin_Sine);
-			CheckBox("Fake Taunt", CFG::Misc_Fake_Taunt);
-		}
-		GroupBoxEnd();
-
-		GroupBoxStart("Auto", 150);
-		{
-			CheckBox("Auto Disguise", CFG::Misc_Auto_Disguise);
-			CheckBox("Auto Vaccinator", CFG::AutoVaccinator_Active);
-			SelectSingle("Auto Vaccinator Pop", CFG::AutoVaccinator_Pop, {
-				{ "Everyone", 0 },
-				{ "Friends Only", 1 }
-			});
-			CheckBox("Auto Strafe", CFG::Misc_Auto_Strafe);
-			SliderFloat("Auto Strafe Turn Scale", CFG::Misc_Auto_Strafe_Turn_Scale, 0.0f, 1.0f, 0.1f, "%.1f");
-			InputKey("Auto RJ Key", CFG::Misc_Auto_Rocket_Jump_Key);
-			InputKey("Auto AP Key", CFG::Misc_Auto_Air_Pogo_Key);
-			InputKey("Auto Heal Key", CFG::Misc_Auto_Medigun_Key);
-			InputKey("Undo Glue Key", CFG::Misc_Movement_Lock_Key);
-			InputKey("Edge Jump Key", CFG::Misc_Edge_Jump_Key);
-		}
-		GroupBoxEnd();
-
-		m_nCursorX += m_nLastGroupBoxW + (CFG::Menu_Spacing_X * 2);
-		m_nCursorY = anchor_y;
-
-		GroupBoxStart("Shifting", 150);
-		{
-			InputKey("Recharge Key", CFG::Exploits_Shifting_Recharge_Key);
-			InputKey("Rapid Fire Key", CFG::Exploits_RapidFire_Key);
-			SliderInt("Rapid Fire Ticks", CFG::Exploits_RapidFire_Ticks, 14, MAX_COMMANDS, 1);
-			SliderInt("Rapid Fire Delay Ticks", CFG::Exploits_RapidFire_Min_Ticks_Target_Same, 0, 5, 1);
-			CheckBox("Rapid Fire Antiwarp", CFG::Exploits_RapidFire_Antiwarp);
-			InputKey("Warp Key", CFG::Exploits_Warp_Key);
-
-			SelectSingle("Warp Mode", CFG::Exploits_Warp_Mode, {
-				{ "Slow", 0 },
-				{ "Full", 1 }
-				});
-
-			SelectSingle("Warp Exploit (for 'Full')", CFG::Exploits_Warp_Exploit, {
-				{ "None", 0 },
-				{ "Fake Peek", 1 },
-				{ "0 Velocity", 2 }
-				});
-
-			CheckBox("Draw Indicator", CFG::Exploits_Shifting_Draw_Indicator);
-
-			/*SelectSingle("Indicator Style", CFG::Exploits_Shifting_Indicator_Style,
-			{
-				{ "Rectangle", 0 },
-				{ "Circle", 1 },
-			});*/
-		}
-		GroupBoxEnd();
-
-		GroupBoxStart("Crits", 150);
-		{
-			InputKey("Key", CFG::Exploits_Crits_Force_Crit_Key);
-			InputKey("Melee Key", CFG::Exploits_Crits_Force_Crit_Key_Melee);
-			CheckBox("Skip Random Crits", CFG::Exploits_Crits_Skip_Random_Crits);
-		}
-		GroupBoxEnd();
-
-		GroupBoxStart("Seed Pred", 150);
-		{
-			CheckBox("Active", CFG::Exploits_SeedPred_Active);
-			CheckBox("Draw Indicator", CFG::Exploits_SeedPred_DrawIndicator);
-		}
-		GroupBoxEnd();
-	}
-
-	if (MainTab == EMainTabs::PLAYERS)
-	{
-		m_nCursorX += CFG::Menu_Spacing_X;
-
-		if (I::EngineClient->IsConnected())
-		{
-			for (auto n{ 1 }; n < I::EngineClient->GetMaxClients() + 1; n++)
-			{
-				if (n == I::EngineClient->GetLocalPlayer())
-				{
-					continue;
-				}
-
-				player_info_t player_info{};
-
-				if (!I::EngineClient->GetPlayerInfo(n, &player_info) || player_info.fakeplayer)
-				{
-					continue;
-				}
-
-				PlayerPriority custom_info{};
-
-				F::Players->GetInfo(n, custom_info);
-
-				auto bx{ m_nCursorX };
-				auto by{ m_nCursorY };
-
-				if (custom_info.Ignored)
-				{
-					playerListButton(Utils::ConvertUtf8ToWide(player_info.name).c_str(), 150, CFG::Color_Friend, false);
-				}
-
-				else if (custom_info.Cheater)
-				{
-					playerListButton(Utils::ConvertUtf8ToWide(player_info.name).c_str(), 150, CFG::Color_Cheater, false);
-				}
-
-				else if (custom_info.RetardLegit)
-				{
-					playerListButton(Utils::ConvertUtf8ToWide(player_info.name).c_str(), 150, CFG::Color_RetardLegit, false);
-				}
-
-				else
-				{
-					playerListButton(Utils::ConvertUtf8ToWide(player_info.name).c_str(), 150, CFG::Menu_Text_Inactive, false);
-				}
-
-				m_nCursorX += m_nLastButtonW + CFG::Menu_Spacing_X;
-				m_nCursorY = by;
-
-				if (playerListButton(L"ignored", 60, custom_info.Ignored ? CFG::Color_Friend : CFG::Menu_Text_Inactive, true))
-				{
-					F::Players->Mark(n, { !custom_info.Ignored, false });
-				}
-
-				m_nCursorX += m_nLastButtonW + CFG::Menu_Spacing_X;
-				m_nCursorY = by;
-
-				if (playerListButton(L"cheater", 60, custom_info.Cheater ? CFG::Color_Cheater : CFG::Menu_Text_Inactive, true))
-				{
-					F::Players->Mark(n, { false, !custom_info.Cheater });
-				}
-
-				m_nCursorX += m_nLastButtonW + CFG::Menu_Spacing_X;
-				m_nCursorY = by;
-
-				if (playerListButton(L"retard legit", 60, custom_info.RetardLegit ? CFG::Color_RetardLegit : CFG::Menu_Text_Inactive, true))
-				{
-					F::Players->Mark(n, { false, false, !custom_info.RetardLegit });
-				}
-
-				m_nCursorX = bx;
-				m_nCursorY = by;
-
-				m_nCursorY += H::Fonts->Get(EFonts::Menu).m_nTall + (CFG::Menu_Spacing_Y + 1);
-			}
-		}
-	}
-
-	if (MainTab == EMainTabs::CONFIGS)
-	{
-		static std::string strSelected = {};
-		const auto& configFolder = U::Storage->GetConfigFolder();
-
-		int nCount = 0;
-
-		for (const auto &entry : std::filesystem::directory_iterator(configFolder))
-		{
-			if (std::string(std::filesystem::path(entry).filename().string()).find(".json") == std::string_view::npos)
-				continue;
-
-			nCount++;
-		}
-
-		if (nCount < 11)
-		{
-			std::string strInput = {};
-
-			auto anchor_x{ m_nCursorX };
-			auto anchor_y{ m_nCursorY };
-
-			if (InputText("Create New", "Enter a Name:", strInput))
-			{
-				bool bAlreadyExists = [&]() -> bool
-				{
-					for (const auto &entry : std::filesystem::directory_iterator(configFolder))
-					{
-						if (std::string(std::filesystem::path(entry).filename().string()).find(".json") == std::string_view::npos)
-							continue;
-
-						if (!std::string(std::filesystem::path(entry).filename().string()).compare(strInput))
-							return true;
-					}
-
-					return false;
-				}();
-
-				if (!bAlreadyExists)
-				{
-					std::string newFile = strInput + ".json";
-					Config::Save(configFolder / newFile);
-				}
-			}
-			
-			//can't do this nicely after getting rid of std::any..
-
-			/*auto anchor_x2{ anchor_x };
-
-			m_nCursorX = anchor_x + m_nLastButtonW + CFG::Menu_Spacing_X;
-			m_nCursorY = anchor_y;
-
-			if (Button("Restore Defaults"))
-			{
-				for (const auto &var : Config::vecVarPtrs)
-				{
-					if (var->m_bNoSave)
-					{
-						continue;
-					}
-
-					var->m_Value = var->m_DefaultValue;
-				}
-			}
-
-			m_nCursorX = anchor_x2;*/
-		}
-
-		if (strSelected.empty())
-		{
-			if (nCount > 0)
-			{
-				GroupBoxStart("Configs", 150);
-				{
-					m_nCursorY += CFG::Menu_Spacing_Y;
-
-					for (const auto &entry : std::filesystem::directory_iterator(configFolder))
-					{
-						if (std::string(std::filesystem::path(entry).filename().string()).find(".json") == std::string_view::npos)
-							continue;
-
-						std::string s = entry.path().filename().string();
-						s.erase(s.end() - 5, s.end());
-
-						if (Button(s.c_str(), false, ((m_nLastGroupBoxW + 1) - (CFG::Menu_Spacing_X * 6))))
-							strSelected = s;
-					}
-				}
-				GroupBoxEnd();
-			}
-		}
-
-		else
-		{
-			GroupBoxStart(strSelected.c_str(), 150);
-			{
-				m_nCursorY += CFG::Menu_Spacing_Y;
-
-				int anchor_y = m_nCursorY;
-
-				if (Button("Load")) {
-					std::string fileName = strSelected + ".json";
-					Config::Load(configFolder / fileName);
-					strSelected = {};
-				}
-
-				m_nCursorX += 90;
-				m_nCursorY = anchor_y;
-
-				if (Button("Update")) {
-					std::string fileName = strSelected + ".json";
-					Config::Save(configFolder / fileName);
-					strSelected = {};
-				}
-
-				if (Button("Delete")) {
-					std::string fileName = strSelected + ".json";
-					std::filesystem::remove(configFolder / fileName);
-					strSelected = {};
-				}
-
-				if (Button("Cancel"))
-					strSelected = {};
-
-				m_nCursorX -= 90;
-			}
-			GroupBoxEnd();
-		}
-	}
+    // Menu Colors
+    if (ImGui::CollapsingHeader("Menu", ImGuiTreeNodeFlags_DefaultOpen))
+    {
+        ImGui::ColorEdit4("Accent Primary", (float*)&CFG::Menu_Accent_Primary);
+        ImGui::ColorEdit4("Accent Secondary", (float*)&CFG::Menu_Accent_Secondary);
+        ImGui::ColorEdit4("Background", (float*)&CFG::Menu_Background);
+        ImGui::Checkbox("Menu Snow", &CFG::Menu_Snow);
+    }
+
+    // Visual Colors
+    if (ImGui::CollapsingHeader("Visuals", ImGuiTreeNodeFlags_DefaultOpen))
+    {
+        ImGui::ColorEdit4("Hands", (float*)&CFG::Color_Hands);
+        ImGui::ColorEdit4("Hands Sheen", (float*)&CFG::Color_Hands_Sheen);
+        ImGui::ColorEdit4("Weapon", (float*)&CFG::Color_Weapon);
+        ImGui::ColorEdit4("Weapon Sheen", (float*)&CFG::Color_Weapon_Sheen);
+        ImGui::ColorEdit4("Projectile Arc", (float*)&CFG::Color_Projectile_Arc);
+    }
+
+    // Entity Colors
+    if (ImGui::CollapsingHeader("Entities", ImGuiTreeNodeFlags_DefaultOpen))
+    {
+        ImGui::ColorEdit4("Local", (float*)&CFG::Color_Local);
+        ImGui::ColorEdit4("Friend", (float*)&CFG::Color_Friend);
+        ImGui::ColorEdit4("Enemy", (float*)&CFG::Color_Enemy);
+        ImGui::ColorEdit4("Teammate", (float*)&CFG::Color_Teammate);
+        ImGui::ColorEdit4("Target", (float*)&CFG::Color_Target);
+        ImGui::ColorEdit4("Invulnerable", (float*)&CFG::Color_Invulnerable);
+        ImGui::ColorEdit4("Cheater", (float*)&CFG::Color_Cheater);
+        ImGui::ColorEdit4("Retard Legit", (float*)&CFG::Color_RetardLegit);
+        ImGui::ColorEdit4("Invisible", (float*)&CFG::Color_Invisible);
+        ImGui::ColorEdit4("Over Heal", (float*)&CFG::Color_OverHeal);
+        ImGui::ColorEdit4("Uber", (float*)&CFG::Color_Uber);
+        ImGui::ColorEdit4("Conds", (float*)&CFG::Color_Conds);
+        ImGui::ColorEdit4("Health Pack", (float*)&CFG::Color_HealthPack);
+        ImGui::ColorEdit4("Ammo Pack", (float*)&CFG::Color_AmmoPack);
+        ImGui::ColorEdit4("Beams", (float*)&CFG::Color_Beams);
+        ImGui::ColorEdit4("Halloween Gifts", (float*)&CFG::Color_Halloween_Gift);
+        ImGui::ColorEdit4("MVM Money", (float*)&CFG::Color_MVM_Money);
+        ImGui::ColorEdit4("Particles", (float*)&CFG::Color_Particles);
+        ImGui::ColorEdit4("World Modulation", (float*)&CFG::Color_World);
+        ImGui::ColorEdit4("Sky Modulation", (float*)&CFG::Color_Sky);
+        ImGui::ColorEdit4("Prop Modulation", (float*)&CFG::Color_Props);
+    }
 }
 
-void CMenu::Snow()
+void CMenu::RenderMiscTab()
 {
-	struct SnowFlake_t
-	{
-		float m_flPosX = 0.0f;
-		float m_flPosY = 0.0f;
-		float m_flFallSpeed = 0.0f;
-		float m_flDriftXSpeed = 0.0f;
-		byte m_nAlpha{ 0 };
-		int m_nSize{};
-	};
+    if (ImGui::BeginTabItem("Misc"))
+    {
+        // Misc
+        if (ImGui::CollapsingHeader("Misc", ImGuiTreeNodeFlags_DefaultOpen))
+        {
+            ImGui::Checkbox("Bunnyhop", &CFG::Misc_Bunnyhop);
+            ImGui::Checkbox("Choke on Bunnyhop", &CFG::Misc_Choke_On_Bhop);
+            ImGui::Checkbox("Bypass sv_pure", &CFG::Misc_Pure_Bypass);
+            ImGui::Checkbox("Noise Maker Spam", &CFG::Misc_NoiseMaker_Spam);
+            ImGui::Checkbox("No Push", &CFG::Misc_No_Push);
+            ImGui::Checkbox("Giant Weapon Sounds", &CFG::Misc_MVM_Giant_Weapon_Sounds);
+            ImGui::Checkbox("Equip Region Unlock", &CFG::Misc_Equip_Region_Unlock);
+            ImGui::Checkbox("Fast Stop", &CFG::Misc_Fast_Stop);
+            ImGui::Checkbox("Anti Server Angle Change", &CFG::Misc_Prevent_Server_Angle_Change);
 
-	static std::vector<SnowFlake_t> vecSnowFlakes = {};
+            if (ImGui::Button("Unlock CVars"))
+            {
+                auto iter = ICvar::Iterator(I::CVar);
+                for (iter.SetFirst(); iter.IsValid(); iter.Next())
+                {
+                    auto cmd = iter.Get();
+                    if (!cmd) continue;
 
-	if (!CFG::Menu_Snow)
-	{
-		if (!vecSnowFlakes.empty())
-		{
-			vecSnowFlakes.clear();
-		}
+                    if (cmd->m_nFlags & FCVAR_DEVELOPMENTONLY)
+                        cmd->m_nFlags &= ~FCVAR_DEVELOPMENTONLY;
 
-		return;
-	}
+                    if (cmd->m_nFlags & FCVAR_HIDDEN)
+                        cmd->m_nFlags &= ~FCVAR_HIDDEN;
 
-	auto GenerateSnowFlake = [](bool bFirstTime = false)
-	{
-		SnowFlake_t Out = {};
+                    if (cmd->m_nFlags & FCVAR_PROTECTED)
+                        cmd->m_nFlags &= ~FCVAR_PROTECTED;
 
-		Out.m_flPosX = static_cast<float>(Utils::RandInt(-(H::Draw->GetScreenW() / 2), H::Draw->GetScreenW()));
-		Out.m_flPosY = static_cast<float>(Utils::RandInt(bFirstTime ? -(H::Draw->GetScreenH() * 2) : -100, -50));
-		Out.m_flFallSpeed = static_cast<float>(Utils::RandInt(100, 200));
-		Out.m_flDriftXSpeed = static_cast<float>(Utils::RandInt(10, 70));
-		Out.m_nAlpha = static_cast<byte>(Utils::RandInt(5, 255));
-		Out.m_nSize = Utils::RandInt(1, 2);
+                    if (cmd->m_nFlags & FCVAR_CHEAT)
+                        cmd->m_nFlags &= ~FCVAR_CHEAT;
+                }
+            }
+        }
 
-		return Out;
-	};
+        // Game
+        if (ImGui::CollapsingHeader("Game", ImGuiTreeNodeFlags_DefaultOpen))
+        {
+            ImGui::Checkbox("Network Fix", &CFG::Misc_Ping_Reducer);
+            ImGui::Checkbox("Prediction Error Jitter Fix", &CFG::Misc_Pred_Error_Jitter_Fix);
+            ImGui::Checkbox("ComputeLightingOrigin Fix", &CFG::Misc_ComputeLightingOrigin_Fix);
+            ImGui::Checkbox("SetupBones Optimization", &CFG::Misc_SetupBones_Optimization);
+            ImGui::Checkbox("Accuracy Improvements", &CFG::Misc_Accuracy_Improvements);
+        }
 
-	if (vecSnowFlakes.empty())
-	{
-		for (int n = 0; n < 1400; n++)
-		{
-			vecSnowFlakes.push_back(GenerateSnowFlake(true));
-		}
-	}
+        // Mann vs. Machine
+        if (ImGui::CollapsingHeader("Mann vs. Machine", ImGuiTreeNodeFlags_DefaultOpen))
+        {
+            InputKey("Instant Respawn", CFG::Misc_MVM_Instant_Respawn_Key);
+            ImGui::Checkbox("Instant Revive", &CFG::Misc_MVM_Instant_Revive);
+        }
 
-	for (auto &SnowFlake : vecSnowFlakes)
-	{
-		if (SnowFlake.m_flPosY > H::Draw->GetScreenH() + 50)
-		{
-			SnowFlake = GenerateSnowFlake();
+        // Chat
+        if (ImGui::CollapsingHeader("Chat", ImGuiTreeNodeFlags_DefaultOpen))
+        {
+            ImGui::Checkbox("Medieval", &CFG::Misc_Chat_Medieval);
+            ImGui::Checkbox("OwO-ify", &CFG::Misc_Chat_Owoify);
+        }
 
-			continue;
-		}
+        // Taunt
+        if (ImGui::CollapsingHeader("Taunt", ImGuiTreeNodeFlags_DefaultOpen))
+        {
+            ImGui::Checkbox("Taunt Slide", &CFG::Misc_Taunt_Slide);
+            ImGui::Checkbox("Taunt Control", &CFG::Misc_Taunt_Slide_Control);
+            InputKey("Taunt Spin Key", CFG::Misc_Taunt_Spin_Key);
+            ImGui::SliderFloat("Taunt Spin Speed", &CFG::Misc_Taunt_Spin_Speed, -50.0f, 50.0f, "%.0f");
+            ImGui::Checkbox("Taunt Spin Sine", &CFG::Misc_Taunt_Spin_Sine);
+            ImGui::Checkbox("Fake Taunt", &CFG::Misc_Fake_Taunt);
+        }
 
-		SnowFlake.m_flPosX += SnowFlake.m_flDriftXSpeed * I::GlobalVars->frametime;
-		SnowFlake.m_flPosY += SnowFlake.m_flFallSpeed * I::GlobalVars->frametime;
+        // Auto
+        if (ImGui::CollapsingHeader("Auto", ImGuiTreeNodeFlags_DefaultOpen))
+        {
+            ImGui::Checkbox("Auto Disguise", &CFG::Misc_Auto_Disguise);
+            ImGui::Checkbox("Auto Vaccinator", &CFG::AutoVaccinator_Active);
 
-		int nSize = SnowFlake.m_nSize;
+            // Auto Vaccinator Pop
+            const char* vaccPopOptions[] = { "Everyone", "Friends Only" };
+            ImGui::Combo("Auto Vaccinator Pop", &CFG::AutoVaccinator_Pop, vaccPopOptions, IM_ARRAYSIZE(vaccPopOptions));
 
-		H::Draw->Rect(static_cast<int>(SnowFlake.m_flPosX), static_cast<int>(SnowFlake.m_flPosY), nSize, nSize, { 230, 230, 230, SnowFlake.m_nAlpha });
-	}
+            ImGui::Checkbox("Auto Strafe", &CFG::Misc_Auto_Strafe);
+            ImGui::SliderFloat("Auto Strafe Turn Scale", &CFG::Misc_Auto_Strafe_Turn_Scale, 0.0f, 1.0f, "%.1f");
+
+            InputKey("Auto RJ Key", CFG::Misc_Auto_Rocket_Jump_Key);
+            InputKey("Auto AP Key", CFG::Misc_Auto_Air_Pogo_Key);
+            InputKey("Auto Heal Key", CFG::Misc_Auto_Medigun_Key);
+            InputKey("Undo Glue Key", CFG::Misc_Movement_Lock_Key);
+            InputKey("Edge Jump Key", CFG::Misc_Edge_Jump_Key);
+        }
+
+        // Shifting
+        if (ImGui::CollapsingHeader("Shifting", ImGuiTreeNodeFlags_DefaultOpen))
+        {
+            InputKey("Recharge Key", CFG::Exploits_Shifting_Recharge_Key);
+            InputKey("Rapid Fire Key", CFG::Exploits_RapidFire_Key);
+            ImGui::SliderInt("Rapid Fire Ticks", &CFG::Exploits_RapidFire_Ticks, 14, MAX_COMMANDS);
+            ImGui::SliderInt("Rapid Fire Delay Ticks", &CFG::Exploits_RapidFire_Min_Ticks_Target_Same, 0, 5);
+            ImGui::Checkbox("Rapid Fire Antiwarp", &CFG::Exploits_RapidFire_Antiwarp);
+            InputKey("Warp Key", CFG::Exploits_Warp_Key);
+
+            // Warp Mode
+            const char* warpModes[] = { "Slow", "Full" };
+            ImGui::Combo("Warp Mode", &CFG::Exploits_Warp_Mode, warpModes, IM_ARRAYSIZE(warpModes));
+
+            // Warp Exploit
+            const char* warpExploits[] = { "None", "Fake Peek", "0 Velocity" };
+            ImGui::Combo("Warp Exploit (for 'Full')", &CFG::Exploits_Warp_Exploit, warpExploits, IM_ARRAYSIZE(warpExploits));
+
+            ImGui::Checkbox("Draw Indicator##Shifting", &CFG::Exploits_Shifting_Draw_Indicator);
+
+            if (CFG::Exploits_Shifting_Draw_Indicator)
+            {
+                // Indicator Style
+                const char* indicatorStyles[] = { "Rectangle", "Circle" };
+                ImGui::Combo("Indicator Style", &CFG::Exploits_Shifting_Indicator_Style, indicatorStyles, IM_ARRAYSIZE(indicatorStyles));
+            }
+        }
+
+        // Crits
+        if (ImGui::CollapsingHeader("Crits", ImGuiTreeNodeFlags_DefaultOpen))
+        {
+            InputKey("Key", CFG::Exploits_Crits_Force_Crit_Key);
+            InputKey("Melee Key", CFG::Exploits_Crits_Force_Crit_Key_Melee);
+            ImGui::Checkbox("Skip Random Crits", &CFG::Exploits_Crits_Skip_Random_Crits);
+        }
+
+        // Seed Pred
+        if (ImGui::CollapsingHeader("Seed Pred", ImGuiTreeNodeFlags_DefaultOpen))
+        {
+            ImGui::Checkbox("Active##ExploitsSeedPred", &CFG::Exploits_SeedPred_Active);
+            ImGui::Checkbox("Draw Indicator##SeedPred", &CFG::Exploits_SeedPred_DrawIndicator);
+        }
+
+        ImGui::EndTabItem();
+    }
 }
 
-void CMenu::Indicators()
+void CMenu::RenderPlayersTab()
 {
-	auto pLocal = H::Entities->GetLocal();
+    if (ImGui::BeginTabItem("Players"))
+    {
+        if (I::EngineClient->IsConnected())
+        {
+            if (ImGui::BeginTable("PlayerList", 4, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg))
+            {
+                ImGui::TableSetupColumn("Player");
+                ImGui::TableSetupColumn("Ignored");
+                ImGui::TableSetupColumn("Cheater");
+                ImGui::TableSetupColumn("Retard Legit");
+                ImGui::TableHeadersRow();
 
-	int x = 2;
-	int tall = H::Fonts->Get(EFonts::ESP_SMALL).m_nTall;
-	int numitems = (pLocal && GetTFPlayerResource()) ? 3 : 2;
-	int y = H::Draw->GetScreenH() - ((numitems * tall) + 2);
-	int offset = 0;
-	Color_t clr = { 200, 200, 200, 255 };
+                for (auto n{ 1 }; n < I::EngineClient->GetMaxClients() + 1; n++)
+                {
+                    if (n == I::EngineClient->GetLocalPlayer())
+                        continue;
 
-	H::Draw->String(H::Fonts->Get(EFonts::ESP_SMALL), x, y + (offset++ * tall), clr, POS_DEFAULT, "fps %d", static_cast<int>(1.0f / I::GlobalVars->absoluteframetime));
+                    player_info_t player_info{};
+                    if (!I::EngineClient->GetPlayerInfo(n, &player_info) || player_info.fakeplayer)
+                        continue;
 
-	if (auto pPR = GetTFPlayerResource())
-	{
-		if (pLocal)
-		{
-			H::Draw->String(H::Fonts->Get(EFonts::ESP_SMALL), x, y + (offset++ * tall), clr, POS_DEFAULT, "ping %d", pPR->GetPing(pLocal->entindex()));
-		}
-	}
+                    PlayerPriority custom_info{};
+                    F::Players->GetInfo(n, custom_info);
 
-	//H::Draw->String(H::Fonts->Get(EFonts::ESP_SMALL), x, y + (offset++ * tall), clr, POS_DEFAULT, "choked %d", I::ClientState->chokedcommands);
-	H::Draw->String(H::Fonts->Get(EFonts::ESP_SMALL), x, y + (offset++ * tall), clr, POS_DEFAULT, "build %hs", __DATE__/* " " __TIME__*/);
+                    ImGui::TableNextRow();
+
+                    // Player name
+                    ImGui::TableSetColumnIndex(0);
+
+                    ImVec4 nameColor = ImVec4(1.0f, 1.0f, 1.0f, 1.0f);
+                    if (custom_info.Ignored)
+                        nameColor = ImVec4(CFG::Color_Friend.r / 255.0f, CFG::Color_Friend.g / 255.0f, CFG::Color_Friend.b / 255.0f, 1.0f);
+                    else if (custom_info.Cheater)
+                        nameColor = ImVec4(CFG::Color_Cheater.r / 255.0f, CFG::Color_Cheater.g / 255.0f, CFG::Color_Cheater.b / 255.0f, 1.0f);
+                    else if (custom_info.RetardLegit)
+                        nameColor = ImVec4(CFG::Color_RetardLegit.r / 255.0f, CFG::Color_RetardLegit.g / 255.0f, CFG::Color_RetardLegit.b / 255.0f, 1.0f);
+
+                    ImGui::TextColored(nameColor, "%s", player_info.name);
+
+                    // Ignored checkbox
+                    ImGui::TableSetColumnIndex(1);
+                    bool ignored = custom_info.Ignored;
+                    if (ImGui::Checkbox(("##ignored_" + std::to_string(n)).c_str(), &ignored))
+                    {
+                        F::Players->Mark(n, { ignored, false });
+                    }
+
+                    // Cheater checkbox
+                    ImGui::TableSetColumnIndex(2);
+                    bool cheater = custom_info.Cheater;
+                    if (ImGui::Checkbox(("##cheater_" + std::to_string(n)).c_str(), &cheater))
+                    {
+                        F::Players->Mark(n, { false, cheater });
+                    }
+
+                    // Retard Legit checkbox
+                    ImGui::TableSetColumnIndex(3);
+                    bool retardLegit = custom_info.RetardLegit;
+                    if (ImGui::Checkbox(("##retard_" + std::to_string(n)).c_str(), &retardLegit))
+                    {
+                        F::Players->Mark(n, { false, false, retardLegit });
+                    }
+                }
+
+                ImGui::EndTable();
+            }
+        }
+        else
+        {
+            ImGui::Text("Not connected to a server");
+        }
+
+        ImGui::EndTabItem();
+    }
+}
+
+void CMenu::RenderConfigsTab()
+{
+    if (ImGui::BeginTabItem("Configs"))
+    {
+        static std::string strSelected = {};
+        static std::string strInput = {};
+        const auto& configFolder = U::Storage->GetConfigFolder();
+
+        int nCount = 0;
+        for (const auto &entry : std::filesystem::directory_iterator(configFolder))
+        {
+            if (std::string(std::filesystem::path(entry).filename().string()).find(".json") == std::string_view::npos)
+                continue;
+            nCount++;
+        }
+
+        if (nCount < 11)
+        {
+            if (ImGui::CollapsingHeader("Create New", ImGuiTreeNodeFlags_DefaultOpen))
+            {
+                char inputBuffer[256] = {};
+                strncpy_s(inputBuffer, sizeof(inputBuffer), strInput.c_str(), _TRUNCATE);
+
+                if (ImGui::InputText("Config Name", inputBuffer, sizeof(inputBuffer)))
+                {
+                    strInput = inputBuffer;
+                }
+
+                ImGui::SameLine();
+                if (ImGui::Button("Create") && !strInput.empty())
+                {
+                    bool bAlreadyExists = false;
+                    for (const auto &entry : std::filesystem::directory_iterator(configFolder))
+                    {
+                        if (std::string(std::filesystem::path(entry).filename().string()).find(".json") == std::string_view::npos)
+                            continue;
+
+                        if (!std::string(std::filesystem::path(entry).filename().string()).compare(strInput))
+                        {
+                            bAlreadyExists = true;
+                            break;
+                        }
+                    }
+
+                    if (!bAlreadyExists)
+                    {
+                        std::string newFile = strInput + ".json";
+                        Config::Save(configFolder / newFile);
+                        strInput.clear();
+                    }
+                }
+            }
+        }
+
+        if (strSelected.empty())
+        {
+            if (nCount > 0)
+            {
+                if (ImGui::CollapsingHeader("Configs", ImGuiTreeNodeFlags_DefaultOpen))
+                {
+                    for (const auto &entry : std::filesystem::directory_iterator(configFolder))
+                    {
+                        if (std::string(std::filesystem::path(entry).filename().string()).find(".json") == std::string_view::npos)
+                            continue;
+
+                        std::string s = entry.path().filename().string();
+                        s.erase(s.end() - 5, s.end()); // Remove .json
+
+                        if (ImGui::Button(s.c_str()))
+                            strSelected = s;
+                    }
+                }
+            }
+        }
+        else
+        {
+            if (ImGui::CollapsingHeader(strSelected.c_str(), ImGuiTreeNodeFlags_DefaultOpen))
+            {
+                if (ImGui::Button("Load"))
+                {
+                    std::string fileName = strSelected + ".json";
+                    Config::Load(configFolder / fileName);
+                    strSelected.clear();
+                }
+
+                ImGui::SameLine();
+                if (ImGui::Button("Update"))
+                {
+                    std::string fileName = strSelected + ".json";
+                    Config::Save(configFolder / fileName);
+                    strSelected.clear();
+                }
+
+                ImGui::SameLine();
+                if (ImGui::Button("Delete"))
+                {
+                    std::string fileName = strSelected + ".json";
+                    std::filesystem::remove(configFolder / fileName);
+                    strSelected.clear();
+                }
+
+                ImGui::SameLine();
+                if (ImGui::Button("Cancel"))
+                    strSelected.clear();
+            }
+        }
+
+        ImGui::EndTabItem();
+    }
 }
 
 void CMenu::Run()
 {
-	if (CFG::Misc_Clean_Screenshot && I::EngineClient->IsTakingScreenshot())
-	{
-		return;
-	}
+    // Handle input and menu toggle logic
+    if (CFG::Misc_Clean_Screenshot && I::EngineClient->IsTakingScreenshot())
+    {
+        return;
+    }
 
-	if (!H::Input->IsGameFocused() && m_bOpen) {
-		m_bOpen = false;
-		I::MatSystemSurface->SetCursorAlwaysVisible(false);
-		return;
-	}
+    if (!H::Input->IsGameFocused() && m_bOpen)
+    {
+        m_bOpen = false;
 
-	if (!m_pGradient)
-	{
-		m_pGradient = std::make_unique<Color_t[]>(200 * 200);
+        // Menu closed due to focus loss - hide our cursor, show system cursor
+        ImGui::GetIO().MouseDrawCursor = false;
 
-		float hue = 0.0f, sat = 0.99f, lum = 1.0f;
+        // Force show system cursor (handle reference counting)
+        while (::ShowCursor(TRUE) < 0) {}  // Keep calling until cursor is visible
 
-		for (int i = 0; i < 200; i++)
-		{
-			for (int j = 0; j < 200; j++)
-			{
-				*reinterpret_cast<Color_t *>(m_pGradient.get() + j + i * 200) = ColorUtils::HSLToRGB(hue, sat, lum);
-				hue += 1.0f / 200.0f;
-			}
+        // Reset input state when closing to prevent stuck keys
+        if (I::InputSystem) {
+            I::InputSystem->ResetInputState();
+        }
+        return;
+    }
 
-			lum -= 1.0f / 200.0f;
-			hue = 0.0f;
-		}
+    if (H::Input->IsPressed(VK_INSERT) || H::Input->IsPressed(VK_F3))
+    {
+        m_bOpen = !m_bOpen;
 
-		m_nColorPickerTextureId = I::MatSystemSurface->CreateNewTextureID(true);
-		I::MatSystemSurface->DrawSetTextureRGBAEx(m_nColorPickerTextureId, reinterpret_cast<const unsigned char *>(m_pGradient.get()), 200, 200, IMAGE_FORMAT_RGBA8888);
-	}
+        // Handle cursor visibility when menu state changes
+        // Input system control is now handled in WndProc (like GOESP)
+        if (m_bOpen) {
+            // Menu opened - show our cursor, hide system cursor
+            ImGui::GetIO().MouseDrawCursor = true;
+            ::ShowCursor(FALSE);  // Hide Windows system cursor
 
-	if (H::Input->IsPressed(VK_INSERT) || H::Input->IsPressed(VK_F3))
-		I::MatSystemSurface->SetCursorAlwaysVisible(m_bOpen = !m_bOpen);
+            // Reset input state to clear any pressed keys (prevent stuck movement)
+            if (I::InputSystem) {
+                I::InputSystem->ResetInputState();
+            }
+        } else {
+            // Menu closed - hide our cursor, show system cursor
+            ImGui::GetIO().MouseDrawCursor = false;
 
-	Indicators();
+            // Force show system cursor (handle reference counting)
+            while (::ShowCursor(TRUE) < 0) {}  // Keep calling until cursor is visible
 
-	if (m_bOpen)
-	{
-		m_bClickConsumed = false;
+            // Reset input state when closing to prevent stuck keys
+            if (I::InputSystem) {
+                I::InputSystem->ResetInputState();
+            }
+        }
+    }
+}
 
-		H::LateRender->Clear();
+void CMenu::RenderImguiFrame()
+{
+    // Multiple safety checks to prevent crashes
+    if (!m_bInitialized || !m_bOpen)
+        return;
 
-		MainWindow();
+    // Additional checks for ImGui context
+    if (!m_bImGuiContextCreated || !ImGui::GetCurrentContext())
+        return;
 
-		H::LateRender->DrawAll();
+    // Ensure our cursor is visible when menu is open
+    ImGui::GetIO().MouseDrawCursor = true;
+    // Note: System cursor hiding is handled in menu toggle, not here to avoid reference count issues
 
-		//rare cat
-		{
-			static bool is_running{ false };
-			static float last_roll_time{ I::EngineClient->Time() };
-			static float progress{ -30.0f };
+    try {
+        // ImGui frame already started in basicHook.cpp to avoid conflicts
+        // ImGui_ImplDX9_NewFrame();
+        // ImGui_ImplWin32_NewFrame();
+        // ImGui::NewFrame();
 
-			if (static_cast<int>(progress) > CFG::Menu_Width + 30)
-			{
-				is_running = false;
-				progress = -30.0f;
-			}
+        // Set window size and position
+        if (m_vWindowSize && m_vWindowPos)
+        {
+            ImGui::SetNextWindowSize(*m_vWindowSize, ImGuiCond_FirstUseEver);
+            ImGui::SetNextWindowPos(*m_vWindowPos, ImGuiCond_FirstUseEver);
+        }
 
-			if (!is_running && I::EngineClient->Time() - last_roll_time > 1.0f)
-			{
-				last_roll_time = I::EngineClient->Time();
+        // Main window
+        if (ImGui::Begin("SEOwnedDE", &m_bOpen, ImGuiWindowFlags_MenuBar))
+        {
+            // Update CFG values with current window position/size
+            ImVec2 pos = ImGui::GetWindowPos();
+            ImVec2 size = ImGui::GetWindowSize();
+            CFG::Menu_Pos_X = static_cast<int>(pos.x);
+            CFG::Menu_Pos_Y = static_cast<int>(pos.y);
+            CFG::Menu_Width = static_cast<int>(size.x);
+            CFG::Menu_Height = static_cast<int>(size.y);
 
-				is_running = Utils::RandInt(0, 50) == 50;
-			}
+            // Update static references
+            if (m_vWindowSize)
+            {
+                m_vWindowSize->x = static_cast<float>(CFG::Menu_Width);
+                m_vWindowSize->y = static_cast<float>(CFG::Menu_Height);
+            }
+            if (m_vWindowPos)
+            {
+                m_vWindowPos->x = static_cast<float>(CFG::Menu_Pos_X);
+                m_vWindowPos->y = static_cast<float>(CFG::Menu_Pos_Y);
+            }
 
-			if (is_running)
-			{
-				progress += 75.0f * I::GlobalVars->frametime;
+            // Tab bar
+            if (ImGui::BeginTabBar("MainTabs"))
+            {
+                RenderAimTab();
+                RenderVisualsTab();
+                RenderMiscTab();
+                RenderPlayersTab();
+                RenderConfigsTab();
 
-				static float flLastFrameUpdateTime = I::EngineClient->Time();
+                ImGui::EndTabBar();
+            }
+        }
+        ImGui::End();
 
-				static int nFrame = 0;
-
-				if (I::EngineClient->Time() - flLastFrameUpdateTime > 0.08f)
-				{
-					flLastFrameUpdateTime = I::EngineClient->Time();
-
-					nFrame++;
-
-					if (nFrame > 7)
-					{
-						nFrame = 0;
-					}
-				}
-
-				H::Draw->StartClipping(CFG::Menu_Pos_X, 0, CFG::Menu_Width, H::Draw->GetScreenH());
-
-				int offset{ 0 };
-
-				if (nFrame == 1 || nFrame == 2 || nFrame == 3 || nFrame == 5 || nFrame == 6)
-				{
-					offset = 1;
-				}
-
-				//run test
-				H::Draw->Texture
-				(
-					CFG::Menu_Pos_X + static_cast<int>(progress),
-					CFG::Menu_Pos_Y - (13 + offset),
-					20,
-					13,
-					F::VisualUtils->GetCatRun(nFrame),
-					POS_DEFAULT
-				);
-
-				H::Draw->EndClipping();
-			}
-		}
-
-		//cats idle
-		{
-			//idle left
-			{
-				static float flLastFrameUpdateTime = I::EngineClient->Time();
-
-				static int nFrame = 0;
-
-				if (I::EngineClient->Time() - flLastFrameUpdateTime > 0.2f)
-				{
-					flLastFrameUpdateTime = I::EngineClient->Time();
-
-					nFrame++;
-
-					if (nFrame > 3)
-					{
-						nFrame = 0;
-					}
-				}
-
-				H::Draw->Texture(CFG::Menu_Pos_X + 5, CFG::Menu_Pos_Y - 12, 12, 12, F::VisualUtils->GetCat(nFrame), POS_DEFAULT);
-			}
-
-			//idle right
-			{
-				static float flLastFrameUpdateTime = I::EngineClient->Time();
-
-				static int nFrame = 0;
-
-				if (I::EngineClient->Time() - flLastFrameUpdateTime > 0.25f)
-				{
-					flLastFrameUpdateTime = I::EngineClient->Time();
-
-					nFrame++;
-
-					if (nFrame > 3)
-					{
-						nFrame = 0;
-					}
-				}
-
-				H::Draw->Texture(CFG::Menu_Pos_X + 5 + 40, CFG::Menu_Pos_Y - 12, 12, 12, F::VisualUtils->GetCat2(nFrame), POS_DEFAULT);
-			}
-
-			//sleep
-			{
-				static float flLastFrameUpdateTime = I::EngineClient->Time();
-
-				static int nFrame = 0;
-
-				if (I::EngineClient->Time() - flLastFrameUpdateTime > 0.3f)
-				{
-					flLastFrameUpdateTime = I::EngineClient->Time();
-
-					nFrame++;
-
-					if (nFrame > 3)
-					{
-						nFrame = 0;
-					}
-				}
-
-				H::Draw->Texture(CFG::Menu_Pos_X + 5 + 20, CFG::Menu_Pos_Y - 8, 12, 8, F::VisualUtils->GetCatSleep(nFrame), POS_DEFAULT);
-			}
-		}
-
-		Snow();
-	}
+        // Frame ending and rendering is handled in basicHook.cpp to prevent conflicts
+        // This avoids double ImGui::Render() calls that cause flickering
+    }
+    catch (...) {
+        // If any ImGui operation fails, close the menu to prevent repeated crashes
+        m_bOpen = false;
+    }
 }
 
 CMenu::CMenu()
 {
-	/*m_strConfigPath = std::filesystem::current_path().string() + "\\SEOwnedDE\\configs";
-	
-	if (!std::filesystem::exists(m_strConfigPath))
-	{
-		std::filesystem::create_directories(m_strConfigPath);
-	}*/
+    m_bInitialized = false;
+    m_bImGuiContextCreated = false;
+    m_vWindowSize = nullptr;
+    m_vWindowPos = nullptr;
+    m_pDevice = nullptr;
 }
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-//the piper never dies
+CMenu::~CMenu()
+{
+    Shutdown();
+}

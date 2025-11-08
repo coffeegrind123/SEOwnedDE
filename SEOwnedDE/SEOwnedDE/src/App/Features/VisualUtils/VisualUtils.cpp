@@ -5,6 +5,11 @@
 
 #include "../Players/Players.h"
 
+#include <unordered_map>
+#include <string>
+
+static std::unordered_map<int, std::string> g_TextureNameMap;
+
 bool CVisualUtils::IsEntityOwnedBy(C_BaseEntity* pEntity, C_BaseEntity* pWho)
 {
 	switch (pEntity->GetClassId())
@@ -126,7 +131,18 @@ int CVisualUtils::CreateTextureFromVTF(const char* name)
 {
 	const int nTextureIdOut = I::MatSystemSurface->CreateNewTextureID(false);
 	I::MatSystemSurface->DrawSetTextureFile(nTextureIdOut, name, 0, true);
+
+	g_TextureNameMap[nTextureIdOut] = name;
+
 	return nTextureIdOut;
+}
+
+const char* CVisualUtils::GetTextureNameFromID(int id)
+{
+	auto it = g_TextureNameMap.find(id);
+	if (it != g_TextureNameMap.end())
+		return it->second.c_str();
+	return nullptr;
 }
 
 int CVisualUtils::GetClassIcon(int nClassNum)
@@ -197,13 +213,13 @@ int CVisualUtils::GetBuildingTextureId(C_BaseObject* pObject)
 
 int CVisualUtils::GetHealthIconTextureId()
 {
-	static int nOut = CreateTextureFromVTF("sprites/healbeam.vtf");
+	static int nOut = CreateTextureFromVTF("sprites/healbeam_red.vtf");
 	return nOut;
 }
 
 int CVisualUtils::GetAmmoIconTextureId()
 {
-	static int nOut = CreateTextureFromVTF("hud/hud_obj_status_ammo_64");
+	static int nOut = CreateTextureFromVTF("vgui/mvm/upgradeicons/bottle_ammoresupply_bw.vtf");
 	return nOut;
 }
 

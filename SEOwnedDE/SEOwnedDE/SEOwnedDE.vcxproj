@@ -478,6 +478,16 @@
     <ClCompile Include="src\Utils\InterfaceManager\InterfaceManager.cpp" />
     <ClCompile Include="src\Utils\Memory\Memory.cpp" />
     <ClCompile Include="src\Utils\SignatureManager\SignatureManager.cpp" />
+    <ClCompile Include="src\SDK\Helpers\Draw\DrawImGui.cpp" />
+    <ClCompile Include="src\App\Features\Menu\basicHook.cpp" />
+    <ClCompile Include="src\App\Features\Menu\imguiHook.cpp" />
+    <ClCompile Include="src\Utils\VTFLoader\VTFLoader.cpp" />
+    <ClCompile Include="include\imgui\imgui.cpp" />
+    <ClCompile Include="include\imgui\imgui_draw.cpp" />
+    <ClCompile Include="include\imgui\imgui_tables.cpp" />
+    <ClCompile Include="include\imgui\imgui_widgets.cpp" />
+    <ClCompile Include="include\imgui\backends\imgui_impl_dx9.cpp" />
+    <ClCompile Include="include\imgui\backends\imgui_impl_win32.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="include\nlohmann\json_fwd.hpp" />
@@ -666,6 +676,18 @@
     <ClInclude Include="src\Utils\Singleton\Singleton.h" />
     <ClInclude Include="src\Utils\Utils.h" />
     <ClInclude Include="src\Utils\Vector\Vector.h" />
+    <ClInclude Include="src\SDK\Helpers\Draw\DrawImGui.h" />
+    <ClInclude Include="src\App\Features\Menu\basicHook.h" />
+    <ClInclude Include="src\App\Features\Menu\imguiHook.h" />
+    <ClInclude Include="src\Utils\VTFLoader\VTFLoader.h" />
+    <ClInclude Include="include\imgui\imgui.h" />
+    <ClInclude Include="include\imgui\imconfig.h" />
+    <ClInclude Include="include\imgui\imgui_internal.h" />
+    <ClInclude Include="include\imgui\imstb_rectpack.h" />
+    <ClInclude Include="include\imgui\imstb_textedit.h" />
+    <ClInclude Include="include\imgui\imstb_truetype.h" />
+    <ClInclude Include="include\imgui\backends\imgui_impl_dx9.h" />
+    <ClInclude Include="include\imgui\backends\imgui_impl_win32.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
