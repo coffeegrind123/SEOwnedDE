@@ -574,9 +574,8 @@ bool ImGui::ButtonBehavior(const ImRect& bb, ImGuiID id, bool* out_hovered, bool
 
     // Special mode for Drag and Drop used by openables (tree nodes, tabs etc.)
     // where holding the button pressed for a long time while drag a payload item triggers the button.
-    if (g.DragDropActive)
-    {
-        if ((flags & ImGuiButtonFlags_PressedOnDragDropHold) && !(g.DragDropSourceFlags & ImGuiDragDropFlags_SourceNoHoldToOpenOthers) && IsItemHovered(ImGuiHoveredFlags_AllowWhenBlockedByActiveItem))
+    if (g.DragDropActive && (flags & ImGuiButtonFlags_PressedOnDragDropHold) && !(g.DragDropSourceFlags & ImGuiDragDropFlags_SourceNoHoldToOpenOthers))
+        if (IsItemHovered(ImGuiHoveredFlags_AllowWhenBlockedByActiveItem))
         {
             hovered = true;
             SetHoveredID(id);
@@ -587,9 +586,6 @@ bool ImGui::ButtonBehavior(const ImRect& bb, ImGuiID id, bool* out_hovered, bool
                 FocusWindow(window);
             }
         }
-        if (g.DragDropAcceptIdPrev == id && (g.DragDropAcceptFlagsPrev & ImGuiDragDropFlags_AcceptDrawAsHovered))
-            hovered = true;
-    }
 
     if (flatten_hovered_children)
         g.HoveredWindow = backup_hovered_window;
@@ -623,7 +619,7 @@ bool ImGui::ButtonBehavior(const ImRect& bb, ImGuiID id, bool* out_hovered, bool
                 if (flags & (ImGuiButtonFlags_PressedOnClickRelease | ImGuiButtonFlags_PressedOnClickReleaseAnywhere))
                 {
                     SetActiveID(id, window);
-                    g.ActiveIdMouseButton = (ImS8)mouse_button_clicked;
+                    g.ActiveIdMouseButton = mouse_button_clicked;
                     if (!(flags & ImGuiButtonFlags_NoNavFocus))
                     {
                         SetFocusID(id, window);
@@ -641,7 +637,7 @@ bool ImGui::ButtonBehavior(const ImRect& bb, ImGuiID id, bool* out_hovered, bool
                         ClearActiveID();
                     else
                         SetActiveID(id, window); // Hold on ID
-                    g.ActiveIdMouseButton = (ImS8)mouse_button_clicked;
+                    g.ActiveIdMouseButton = mouse_button_clicked;
                     if (!(flags & ImGuiButtonFlags_NoNavFocus))
                     {
                         SetFocusID(id, window);
@@ -679,35 +675,32 @@ bool ImGui::ButtonBehavior(const ImRect& bb, ImGuiID id, bool* out_hovered, bool
 
     // Keyboard/Gamepad navigation handling
     // We report navigated and navigation-activated items as hovered but we don't set g.HoveredId to not interfere with mouse.
-    if ((item_flags & ImGuiItemFlags_Disabled) == 0)
+    if (g.NavId == id && g.NavCursorVisible && g.NavHighlightItemUnderNav)
+        if (!(flags & ImGuiButtonFlags_NoHoveredOnFocus))
+            hovered = true;
+    if (g.NavActivateDownId == id)
     {
-        if (g.NavId == id && g.NavCursorVisible && g.NavHighlightItemUnderNav)
-            if (!(flags & ImGuiButtonFlags_NoHoveredOnFocus))
-                hovered = true;
-        if (g.NavActivateDownId == id)
+        bool nav_activated_by_code = (g.NavActivateId == id);
+        bool nav_activated_by_inputs = (g.NavActivatePressedId == id);
+        if (!nav_activated_by_inputs && (item_flags & ImGuiItemFlags_ButtonRepeat))
         {
-            bool nav_activated_by_code = (g.NavActivateId == id);
-            bool nav_activated_by_inputs = (g.NavActivatePressedId == id);
-            if (!nav_activated_by_inputs && (item_flags & ImGuiItemFlags_ButtonRepeat))
-            {
-                // Avoid pressing multiple keys from triggering excessive amount of repeat events
-                const ImGuiKeyData* key1 = GetKeyData(ImGuiKey_Space);
-                const ImGuiKeyData* key2 = GetKeyData(ImGuiKey_Enter);
-                const ImGuiKeyData* key3 = GetKeyData(ImGuiKey_NavGamepadActivate);
-                const float t1 = ImMax(ImMax(key1->DownDuration, key2->DownDuration), key3->DownDuration);
-                nav_activated_by_inputs = CalcTypematicRepeatAmount(t1 - g.IO.DeltaTime, t1, g.IO.KeyRepeatDelay, g.IO.KeyRepeatRate) > 0;
-            }
-            if (nav_activated_by_code || nav_activated_by_inputs)
-            {
-                // Set active id so it can be queried by user via IsItemActive(), equivalent of holding the mouse button.
-                pressed = true;
-                SetActiveID(id, window);
-                g.ActiveIdSource = g.NavInputSource;
-                if (!(flags & ImGuiButtonFlags_NoNavFocus) && !(g.NavActivateFlags & ImGuiActivateFlags_FromShortcut))
-                    SetFocusID(id, window);
-                if (g.NavActivateFlags & ImGuiActivateFlags_FromShortcut)
-                    g.ActiveIdFromShortcut = true;
-            }
+            // Avoid pressing multiple keys from triggering excessive amount of repeat events
+            const ImGuiKeyData* key1 = GetKeyData(ImGuiKey_Space);
+            const ImGuiKeyData* key2 = GetKeyData(ImGuiKey_Enter);
+            const ImGuiKeyData* key3 = GetKeyData(ImGuiKey_NavGamepadActivate);
+            const float t1 = ImMax(ImMax(key1->DownDuration, key2->DownDuration), key3->DownDuration);
+            nav_activated_by_inputs = CalcTypematicRepeatAmount(t1 - g.IO.DeltaTime, t1, g.IO.KeyRepeatDelay, g.IO.KeyRepeatRate) > 0;
+        }
+        if (nav_activated_by_code || nav_activated_by_inputs)
+        {
+            // Set active id so it can be queried by user via IsItemActive(), equivalent of holding the mouse button.
+            pressed = true;
+            SetActiveID(id, window);
+            g.ActiveIdSource = g.NavInputSource;
+            if (!(flags & ImGuiButtonFlags_NoNavFocus) && !(g.NavActivateFlags & ImGuiActivateFlags_FromShortcut))
+                SetFocusID(id, window);
+            if (g.NavActivateFlags & ImGuiActivateFlags_FromShortcut)
+                g.ActiveIdFromShortcut = true;
         }
     }
 
@@ -761,7 +754,7 @@ bool ImGui::ButtonBehavior(const ImRect& bb, ImGuiID id, bool* out_hovered, bool
     }
 
     // Activation highlight (this may be a remote activation)
-    if (g.NavHighlightActivatedId == id && (item_flags & ImGuiItemFlags_Disabled) == 0)
+    if (g.NavHighlightActivatedId == id)
         hovered = true;
 
     if (out_hovered) *out_hovered = hovered;
@@ -4159,7 +4152,7 @@ static int STB_TEXTEDIT_INSERTCHARS(ImGuiInputTextState* obj, int pos, const cha
     // We support partial insertion (with a mod in stb_textedit.h)
     const int avail = obj->BufCapacity - 1 - obj->TextLen;
     if (!is_resizable && new_text_len > avail)
-        new_text_len = (int)(ImTextFindValidUtf8CodepointEnd(new_text, new_text + new_text_len, new_text + avail) - new_text); // Truncate to closest UTF-8 codepoint. Alternative: return 0 to cancel insertion.
+        new_text_len = avail; // 0
     if (new_text_len == 0)
         return 0;
 
@@ -4318,7 +4311,7 @@ void ImGuiInputTextCallbackData::InsertChars(int pos, const char* new_text, cons
     // We support partial insertion (with a mod in stb_textedit.h)
     const int avail = BufSize - 1 - BufTextLen;
     if (!is_resizable && new_text_len > avail)
-        new_text_len = (int)(ImTextFindValidUtf8CodepointEnd(new_text, new_text + new_text_len, new_text + avail) - new_text); // Truncate to closest UTF-8 codepoint. Alternative: return 0 to cancel insertion.
+        new_text_len = avail; // 0
     if (new_text_len == 0)
         return;
 
@@ -5155,13 +5148,12 @@ bool ImGui::InputTextEx(const char* label, const char* hint, char* buf, int buf_
             {
                 // Filter pasted buffer
                 const int clipboard_len = (int)ImStrlen(clipboard);
-                const char* clipboard_end = clipboard + clipboard_len;
                 ImVector<char> clipboard_filtered;
                 clipboard_filtered.reserve(clipboard_len + 1);
                 for (const char* s = clipboard; *s != 0; )
                 {
                     unsigned int c;
-                    int in_len = ImTextCharFromUtf8(&c, s, clipboard_end);
+                    int in_len = ImTextCharFromUtf8(&c, s, NULL);
                     s += in_len;
                     if (!InputTextFilterCharacter(&g, &c, flags, callback, callback_user_data, true))
                         continue;

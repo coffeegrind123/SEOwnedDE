@@ -29,7 +29,7 @@
 // Library Version
 // (Integer encoded as XYYZZ for use in #if preprocessor conditionals, e.g. '#if IMGUI_VERSION_NUM >= 12345')
 #define IMGUI_VERSION       "1.92.5 WIP"
-#define IMGUI_VERSION_NUM   19244
+#define IMGUI_VERSION_NUM   19242
 #define IMGUI_HAS_TABLE             // Added BeginTable() - from IMGUI_VERSION_NUM >= 18000
 #define IMGUI_HAS_TEXTURES          // Added ImGuiBackendFlags_RendererHasTextures - from IMGUI_VERSION_NUM >= 19198
 
@@ -89,15 +89,12 @@ Index of this file:
 #endif
 
 // Helper Macros
-// (note: compiling with NDEBUG will usually strip out assert() to nothing, which is NOT recommended because we use asserts to notify of programmer mistakes.)
 #ifndef IM_ASSERT
 #include <assert.h>
 #define IM_ASSERT(_EXPR)            assert(_EXPR)                               // You can override the default assert handler by editing imconfig.h
 #endif
 #define IM_ARRAYSIZE(_ARR)          ((int)(sizeof(_ARR) / sizeof(*(_ARR))))     // Size of a static C-style array. Don't use on pointers!
 #define IM_UNUSED(_VAR)             ((void)(_VAR))                              // Used to silence "unused variable warnings". Often useful as asserts may be stripped out from final builds.
-#define IM_STRINGIFY_HELPER(_EXPR)  #_EXPR
-#define IM_STRINGIFY(_EXPR)         IM_STRINGIFY_HELPER(_EXPR)                  // Preprocessor idiom to stringify e.g. an integer or a macro.
 
 // Check that version and structures layouts are matching between compiled imgui code and caller. Read comments above DebugCheckVersionAndDataLayout() for details.
 #define IMGUI_CHECKVERSION()        ImGui::DebugCheckVersionAndDataLayout(IMGUI_VERSION, sizeof(ImGuiIO), sizeof(ImGuiStyle), sizeof(ImVec2), sizeof(ImVec4), sizeof(ImDrawVert), sizeof(ImDrawIdx))
@@ -333,7 +330,7 @@ IM_MSVC_RUNTIME_CHECKS_RESTORE
 //   - You may decide to store a higher-level structure containing texture, sampler, shader etc. with various
 //     constructors if you like. You will need to implement ==/!= operators.
 // History:
-// - In v1.91.4 (2024/10/08): the default type for ImTextureID was changed from 'void*' to 'ImU64'. This allowed backends requiring 64-bit worth of data to build on 32-bit architectures. Use intermediary intptr_t cast and read FAQ if you have casting warnings.
+// - In v1.91.4 (2024/10/08): the default type for ImTextureID was changed from 'void*' to 'ImU64'. This allowed backends requirig 64-bit worth of data to build on 32-bit architectures. Use intermediary intptr_t cast and read FAQ if you have casting warnings.
 // - In v1.92.0 (2025/06/11): added ImTextureRef which carry either a ImTextureID either a pointer to internal texture atlas. All user facing functions taking ImTextureID changed to ImTextureRef
 #ifndef ImTextureID
 typedef ImU64 ImTextureID;      // Default: store up to 64-bits (any pointer or integer). A majority of backends are ok with that.
@@ -738,7 +735,7 @@ namespace ImGui
     // Widgets: Trees
     // - TreeNode functions return true when the node is open, in which case you need to also call TreePop() when you are finished displaying the tree node contents.
     IMGUI_API bool          TreeNode(const char* label);
-    IMGUI_API bool          TreeNode(const char* str_id, const char* fmt, ...) IM_FMTARGS(2);   // helper variation to easily decorrelate the id from the displayed string. Read the FAQ about why and how to use ID. to align arbitrary text at the same level as a TreeNode() you can use Bullet().
+    IMGUI_API bool          TreeNode(const char* str_id, const char* fmt, ...) IM_FMTARGS(2);   // helper variation to easily decorelate the id from the displayed string. Read the FAQ about why and how to use ID. to align arbitrary text at the same level as a TreeNode() you can use Bullet().
     IMGUI_API bool          TreeNode(const void* ptr_id, const char* fmt, ...) IM_FMTARGS(2);   // "
     IMGUI_API bool          TreeNodeV(const char* str_id, const char* fmt, va_list args) IM_FMTLIST(2);
     IMGUI_API bool          TreeNodeV(const void* ptr_id, const char* fmt, va_list args) IM_FMTLIST(2);
@@ -1183,8 +1180,8 @@ enum ImGuiWindowFlags_
 
     // Obsolete names
 #ifndef IMGUI_DISABLE_OBSOLETE_FUNCTIONS
-    //ImGuiWindowFlags_NavFlattened           = 1 << 29,  // Obsoleted in 1.90.9: moved to ImGuiChildFlags. BeginChild(name, size, 0, ImGuiWindowFlags_NavFlattened)           --> BeginChild(name, size, ImGuiChildFlags_NavFlattened, 0)
-    //ImGuiWindowFlags_AlwaysUseWindowPadding = 1 << 30,  // Obsoleted in 1.90.0: moved to ImGuiChildFlags. BeginChild(name, size, 0, ImGuiWindowFlags_AlwaysUseWindowPadding) --> BeginChild(name, size, ImGuiChildFlags_AlwaysUseWindowPadding, 0)
+    ImGuiWindowFlags_NavFlattened           = 1 << 29,  // Obsoleted in 1.90.9: Use ImGuiChildFlags_NavFlattened in BeginChild() call.
+    ImGuiWindowFlags_AlwaysUseWindowPadding = 1 << 30,  // Obsoleted in 1.90.0: Use ImGuiChildFlags_AlwaysUseWindowPadding in BeginChild() call.
 #endif
 };
 
@@ -1212,7 +1209,7 @@ enum ImGuiChildFlags_
 
     // Obsolete names
 #ifndef IMGUI_DISABLE_OBSOLETE_FUNCTIONS
-    //ImGuiChildFlags_Border                = ImGuiChildFlags_Borders,  // Renamed in 1.91.1 (August 2024) for consistency.
+    ImGuiChildFlags_Border                  = ImGuiChildFlags_Borders,  // Renamed in 1.91.1 (August 2024) for consistency.
 #endif
 };
 
@@ -1275,7 +1272,7 @@ enum ImGuiInputTextFlags_
     // - It is much slower than regular text fields.
     //   Ballpark estimate of cost on my 2019 desktop PC: for a 100 KB text buffer: +~0.3 ms (Optimized) / +~1.0 ms (Debug build).
     //   The CPU cost is very roughly proportional to text length, so a 10 KB buffer should cost about ten times less.
-    ImGuiInputTextFlags_WordWrap            = 1 << 24,  // InputTextMultiline(): word-wrap lines that are too long.
+    ImGuiInputTextFlags_WordWrap            = 1 << 24,  // InputTextMultine(): word-wrap lines that are too long.
 
     // Obsolete names
     //ImGuiInputTextFlags_AlwaysInsertMode  = ImGuiInputTextFlags_AlwaysOverwrite   // [renamed in 1.82] name was not matching behavior
@@ -1302,7 +1299,7 @@ enum ImGuiTreeNodeFlags_
     ImGuiTreeNodeFlags_SpanAllColumns       = 1 << 14,  // Frame will span all columns of its container table (label will still fit in current column)
     ImGuiTreeNodeFlags_LabelSpanAllColumns  = 1 << 15,  // Label will span all columns of its container table
     //ImGuiTreeNodeFlags_NoScrollOnOpen     = 1 << 16,  // FIXME: TODO: Disable automatic scroll on TreePop() if node got just open and contents is not visible
-    ImGuiTreeNodeFlags_NavLeftJumpsToParent = 1 << 17,  // Nav: left arrow moves back to parent. This is processed in TreePop() when there's an unfulfilled Left nav request remaining.
+    ImGuiTreeNodeFlags_NavLeftJumpsToParent = 1 << 17,  // Nav: left arrow moves back to parent. This is processed in TreePop() when there's an unfullfilled Left nav request remaining.
     ImGuiTreeNodeFlags_CollapsingHeader     = ImGuiTreeNodeFlags_Framed | ImGuiTreeNodeFlags_NoTreePushOnOpen | ImGuiTreeNodeFlags_NoAutoOpenOnLog,
 
     // [EXPERIMENTAL] Draw lines connecting TreeNode hierarchy. Discuss in GitHub issue #2920.
@@ -1484,7 +1481,6 @@ enum ImGuiDragDropFlags_
     ImGuiDragDropFlags_AcceptBeforeDelivery         = 1 << 10,  // AcceptDragDropPayload() will returns true even before the mouse button is released. You can then call IsDelivery() to test if the payload needs to be delivered.
     ImGuiDragDropFlags_AcceptNoDrawDefaultRect      = 1 << 11,  // Do not draw the default highlight rectangle when hovering over target.
     ImGuiDragDropFlags_AcceptNoPreviewTooltip       = 1 << 12,  // Request hiding the BeginDragDropSource tooltip from the BeginDragDropTarget site.
-    ImGuiDragDropFlags_AcceptDrawAsHovered          = 1 << 13,  // Accepting item will render as if hovered. Useful for e.g. a Button() used as a drop target.
     ImGuiDragDropFlags_AcceptPeekOnly               = ImGuiDragDropFlags_AcceptBeforeDelivery | ImGuiDragDropFlags_AcceptNoDrawDefaultRect, // For peeking ahead and inspecting the payload before delivery.
 
 #ifndef IMGUI_DISABLE_OBSOLETE_FUNCTIONS
@@ -1658,9 +1654,9 @@ enum ImGuiKey : int
     ImGuiMod_Mask_                  = 0xF000,  // 4-bits
 
 #ifndef IMGUI_DISABLE_OBSOLETE_FUNCTIONS
-    ImGuiKey_COUNT                  = ImGuiKey_NamedKey_END,    // Obsoleted in 1.91.5 because it was misleading (since named keys don't start at 0 anymore)
+    ImGuiKey_COUNT                  = ImGuiKey_NamedKey_END,    // Obsoleted in 1.91.5 because it was extremely misleading (since named keys don't start at 0 anymore)
     ImGuiMod_Shortcut               = ImGuiMod_Ctrl,            // Removed in 1.90.7, you can now simply use ImGuiMod_Ctrl
-    //ImGuiKey_ModCtrl = ImGuiMod_Ctrl, ImGuiKey_ModShift = ImGuiMod_Shift, ImGuiKey_ModAlt = ImGuiMod_Alt, ImGuiKey_ModSuper = ImGuiMod_Super, // Renamed in 1.89
+    ImGuiKey_ModCtrl = ImGuiMod_Ctrl, ImGuiKey_ModShift = ImGuiMod_Shift, ImGuiKey_ModAlt = ImGuiMod_Alt, ImGuiKey_ModSuper = ImGuiMod_Super, // Renamed in 1.89
     //ImGuiKey_KeyPadEnter = ImGuiKey_KeypadEnter,              // Renamed in 1.87
 #endif
 };
@@ -1777,8 +1773,7 @@ enum ImGuiCol_
     ImGuiCol_TextLink,              // Hyperlink color
     ImGuiCol_TextSelectedBg,        // Selected text inside an InputText
     ImGuiCol_TreeLines,             // Tree node hierarchy outlines when using ImGuiTreeNodeFlags_DrawLines
-    ImGuiCol_DragDropTarget,        // Rectangle border highlighting a drop target
-    ImGuiCol_DragDropTargetBg,      // Rectangle background highlighting a drop target
+    ImGuiCol_DragDropTarget,        // Rectangle highlighting a drop target
     ImGuiCol_UnsavedMarker,         // Unsaved Document marker (in window title and tabs)
     ImGuiCol_NavCursor,             // Color of keyboard/gamepad navigation cursor/rectangle, when visible
     ImGuiCol_NavWindowingHighlight, // Highlight window when using CTRL+TAB
@@ -1907,7 +1902,7 @@ enum ImGuiColorEditFlags_
 
     // Obsolete names
 #ifndef IMGUI_DISABLE_OBSOLETE_FUNCTIONS
-    ImGuiColorEditFlags_AlphaPreview = 0, // Removed in 1.91.8. This is the default now. Will display a checkerboard unless ImGuiColorEditFlags_AlphaNoBg is set.
+    ImGuiColorEditFlags_AlphaPreview = 0,         // [Removed in 1.91.8] This is the default now. Will display a checkerboard unless ImGuiColorEditFlags_AlphaNoBg is set.
 #endif
     //ImGuiColorEditFlags_RGB = ImGuiColorEditFlags_DisplayRGB, ImGuiColorEditFlags_HSV = ImGuiColorEditFlags_DisplayHSV, ImGuiColorEditFlags_HEX = ImGuiColorEditFlags_DisplayHex  // [renamed in 1.69]
 };
@@ -2292,7 +2287,7 @@ struct ImGuiStyle
     float       ColumnsMinSpacing;          // Minimum horizontal spacing between two columns. Preferably > (FramePadding.x + 1).
     float       ScrollbarSize;              // Width of the vertical scrollbar, Height of the horizontal scrollbar.
     float       ScrollbarRounding;          // Radius of grab corners for scrollbar.
-    float       ScrollbarPadding;           // Padding of scrollbar grab within its frame (same for both axes).
+    float       ScrollbarPadding;           // Padding of scrollbar grab within its frame (same for both axises).
     float       GrabMinSize;                // Minimum width/height of a grab box for slider/scrollbar.
     float       GrabRounding;               // Radius of grabs corners rounding. Set to 0.0f to have rectangular slider grabs.
     float       LogSliderDeadzone;          // The size in pixels of the dead-zone around zero on logarithmic sliders that cross zero.
@@ -2310,9 +2305,6 @@ struct ImGuiStyle
     ImGuiTreeNodeFlags TreeLinesFlags;      // Default way to draw lines connecting TreeNode hierarchy. ImGuiTreeNodeFlags_DrawLinesNone or ImGuiTreeNodeFlags_DrawLinesFull or ImGuiTreeNodeFlags_DrawLinesToNodes.
     float       TreeLinesSize;              // Thickness of outlines when using ImGuiTreeNodeFlags_DrawLines.
     float       TreeLinesRounding;          // Radius of lines connecting child nodes to the vertical line.
-    float       DragDropTargetRounding;     // Radius of the drag and drop target frame.
-    float       DragDropTargetBorderSize;   // Thickness of the drag and drop target border.
-    float       DragDropTargetPadding;      // Size to expand the drag and drop target from actual target item size.
     ImGuiDir    ColorButtonPosition;        // Side of the color button in the ColorEdit4 widget (left/right). Defaults to ImGuiDir_Right.
     ImVec2      ButtonTextAlign;            // Alignment of button text when button is larger than text. Defaults to (0.5f, 0.5f) (centered).
     ImVec2      SelectableTextAlign;        // Alignment of selectable text. Defaults to (0.0f, 0.0f) (top-left aligned). It's generally important to keep this left-aligned if you want to lay multiple items on a same line.
@@ -2394,7 +2386,7 @@ struct ImGuiIO
     // Font system
     ImFontAtlas*Fonts;                          // <auto>           // Font atlas: load, rasterize and pack one or more fonts into a single texture.
     ImFont*     FontDefault;                    // = NULL           // Font to use on NewFrame(). Use NULL to uses Fonts->Fonts[0].
-    bool        FontAllowUserScaling;           // = false          // Allow user scaling text of individual window with CTRL+Wheel.
+    bool        FontAllowUserScaling;           // = false          // [OBSOLETE] Allow user scaling text of individual window with CTRL+Wheel.
 
     // Keyboard/Gamepad Navigation options
     bool        ConfigNavSwapGamepadButtons;    // = false          // Swap Activate<>Cancel (A<>B) buttons, matching typical "Nintendo/Japanese style" gamepad layout.
@@ -2512,6 +2504,9 @@ struct ImGuiIO
     IMGUI_API void  ClearEventsQueue();                                     // Clear all incoming events.
     IMGUI_API void  ClearInputKeys();                                       // Clear current keyboard/gamepad state + current frame text input buffer. Equivalent to releasing all keys/buttons.
     IMGUI_API void  ClearInputMouse();                                      // Clear current mouse state.
+#ifndef IMGUI_DISABLE_OBSOLETE_FUNCTIONS
+    IMGUI_API void  ClearInputCharacters();                                 // [Obsoleted in 1.89.8] Clear the current frame text input buffer. Now included within ClearInputKeys().
+#endif
 
     //------------------------------------------------------------------
     // Output - Updated by NewFrame() or EndFrame()/Render()
@@ -2596,8 +2591,6 @@ struct ImGuiIO
     const char* (*GetClipboardTextFn)(void* user_data);
     void        (*SetClipboardTextFn)(void* user_data, const char* text);
     void*       ClipboardUserData;
-
-    //void ClearInputCharacters() { InputQueueCharacters.resize(0); } // [Obsoleted in 1.89.8] Clear the current frame text input buffer. Now included within ClearInputKeys(). Removed this as it is ambiguous/misleading and generally incorrect to use with the existence of a higher-level input queue.
 #endif
 
     IMGUI_API   ImGuiIO();
@@ -3375,8 +3368,8 @@ struct ImDrawList
 
     // Obsolete names
 #ifndef IMGUI_DISABLE_OBSOLETE_FUNCTIONS
-    inline    void  PushTextureID(ImTextureRef tex_ref) { PushTexture(tex_ref); }   // RENAMED in 1.92.0
-    inline    void  PopTextureID()                      { PopTexture(); }           // RENAMED in 1.92.0
+    inline    void  PushTextureID(ImTextureRef tex_ref) { PushTexture(tex_ref); }   // RENAMED in 1.92.x
+    inline    void  PopTextureID()                      { PopTexture(); }           // RENAMED in 1.92.x
 #endif
     //inline  void  AddEllipse(const ImVec2& center, float radius_x, float radius_y, ImU32 col, float rot = 0.0f, int num_segments = 0, float thickness = 1.0f) { AddEllipse(center, ImVec2(radius_x, radius_y), col, rot, num_segments, thickness); } // OBSOLETED in 1.90.5 (Mar 2024)
     //inline  void  AddEllipseFilled(const ImVec2& center, float radius_x, float radius_y, ImU32 col, float rot = 0.0f, int num_segments = 0) { AddEllipseFilled(center, ImVec2(radius_x, radius_y), col, rot, num_segments); }                        // OBSOLETED in 1.90.5 (Mar 2024)
@@ -3413,7 +3406,7 @@ struct ImDrawData
     ImVec2              DisplaySize;        // Size of the viewport to render (== GetMainViewport()->Size for the main viewport, == io.DisplaySize in most single-viewport applications)
     ImVec2              FramebufferScale;   // Amount of pixels for each unit of DisplaySize. Copied from viewport->FramebufferScale (== io.DisplayFramebufferScale for main viewport). Generally (1,1) on normal display, (2,2) on OSX with Retina display.
     ImGuiViewport*      OwnerViewport;      // Viewport carrying the ImDrawData instance, might be of use to the renderer (generally not).
-    ImVector<ImTextureData*>* Textures;     // List of textures to update. Most of the times the list is shared by all ImDrawData, has only 1 texture and it doesn't need any update. This almost always points to ImGui::GetPlatformIO().Textures[]. May be overridden or set to NULL if you want to manually update textures.
+    ImVector<ImTextureData*>* Textures;     // List of textures to update. Most of the times the list is shared by all ImDrawData, has only 1 texture and it doesn't need any update. This almost always points to ImGui::GetPlatformIO().Textures[]. May be overriden or set to NULL if you want to manually update textures.
 
     // Functions
     ImDrawData()    { Clear(); }
@@ -3517,7 +3510,7 @@ struct ImFontConfig
     char            Name[40];               // <auto>   // Name (strictly to ease debugging, hence limited size buffer)
     void*           FontData;               //          // TTF/OTF data
     int             FontDataSize;           //          // TTF/OTF data size
-    bool            FontDataOwnedByAtlas;   // true     // TTF/OTF data ownership taken by the owner ImFontAtlas (will delete memory itself).
+    bool            FontDataOwnedByAtlas;   // true     // TTF/OTF data ownership taken by the container ImFontAtlas (will delete memory itself).
 
     // Options
     bool            MergeMode;              // false    // Merge into previous ImFont, so you can combine multiple inputs font into one ImFont (e.g. ASCII font + icons + Japanese glyphs). You may want to use GlyphOffset.y when merge font of different heights.
@@ -3691,7 +3684,7 @@ struct ImFontAtlas
 
     // Register and retrieve custom rectangles
     // - You can request arbitrary rectangles to be packed into the atlas, for your own purpose.
-    // - Since 1.92.0, packing is done immediately in the function call (previously packing was done during the Build call)
+    // - Since 1.92.X, packing is done immediately in the function call (previously packing was done during the Build call)
     // - You can render your pixels into the texture right after calling the AddCustomRect() functions.
     // - VERY IMPORTANT:
     //   - Texture may be created/resized at any time when calling ImGui or ImFontAtlas functions.
@@ -3730,7 +3723,7 @@ struct ImFontAtlas
 #ifdef IMGUI_DISABLE_OBSOLETE_FUNCTIONS
     ImTextureRef                TexRef;             // Latest texture identifier == TexData->GetTexRef().
 #else
-    union { ImTextureRef TexRef; ImTextureRef TexID; }; // Latest texture identifier == TexData->GetTexRef(). // RENAMED TexID to TexRef in 1.92.0.
+    union { ImTextureRef TexRef; ImTextureRef TexID; }; // Latest texture identifier == TexData->GetTexRef(). // RENAMED TexID to TexRef in 1.92.x
 #endif
     ImTextureData*              TexData;            // Latest texture.
 
@@ -3760,15 +3753,15 @@ struct ImFontAtlas
 #ifndef IMGUI_DISABLE_OBSOLETE_FUNCTIONS
     // Legacy: You can request your rectangles to be mapped as font glyph (given a font + Unicode point), so you can render e.g. custom colorful icons and use them as regular glyphs. --> Prefer using a custom ImFontLoader.
     ImFontAtlasRect             TempRect;           // For old GetCustomRectByIndex() API
-    inline ImFontAtlasRectId    AddCustomRectRegular(int w, int h)                                                          { return AddCustomRect(w, h); }                             // RENAMED in 1.92.0
-    inline const ImFontAtlasRect* GetCustomRectByIndex(ImFontAtlasRectId id)                                                { return GetCustomRect(id, &TempRect) ? &TempRect : NULL; } // OBSOLETED in 1.92.0
-    inline void                 CalcCustomRectUV(const ImFontAtlasRect* r, ImVec2* out_uv_min, ImVec2* out_uv_max) const    { *out_uv_min = r->uv0; *out_uv_max = r->uv1; }             // OBSOLETED in 1.92.0
-    IMGUI_API ImFontAtlasRectId AddCustomRectFontGlyph(ImFont* font, ImWchar codepoint, int w, int h, float advance_x, const ImVec2& offset = ImVec2(0, 0));                            // OBSOLETED in 1.92.0: Use custom ImFontLoader in ImFontConfig
-    IMGUI_API ImFontAtlasRectId AddCustomRectFontGlyphForSize(ImFont* font, float font_size, ImWchar codepoint, int w, int h, float advance_x, const ImVec2& offset = ImVec2(0, 0));    // ADDED AND OBSOLETED in 1.92.0
+    inline ImFontAtlasRectId    AddCustomRectRegular(int w, int h)                                                          { return AddCustomRect(w, h); }                             // RENAMED in 1.92.X
+    inline const ImFontAtlasRect* GetCustomRectByIndex(ImFontAtlasRectId id)                                                { return GetCustomRect(id, &TempRect) ? &TempRect : NULL; } // OBSOLETED in 1.92.X
+    inline void                 CalcCustomRectUV(const ImFontAtlasRect* r, ImVec2* out_uv_min, ImVec2* out_uv_max) const    { *out_uv_min = r->uv0; *out_uv_max = r->uv1; }             // OBSOLETED in 1.92.X
+    IMGUI_API ImFontAtlasRectId AddCustomRectFontGlyph(ImFont* font, ImWchar codepoint, int w, int h, float advance_x, const ImVec2& offset = ImVec2(0, 0));                            // OBSOLETED in 1.92.X: Use custom ImFontLoader in ImFontConfig
+    IMGUI_API ImFontAtlasRectId AddCustomRectFontGlyphForSize(ImFont* font, float font_size, ImWchar codepoint, int w, int h, float advance_x, const ImVec2& offset = ImVec2(0, 0));    // ADDED AND OBSOLETED in 1.92.X
 #endif
-    //unsigned int                      FontBuilderFlags;        // OBSOLETED in 1.92.0: Renamed to FontLoaderFlags.
-    //int                               TexDesiredWidth;         // OBSOLETED in 1.92.0: Force texture width before calling Build(). Must be a power-of-two. If have many glyphs your graphics API have texture size restrictions you may want to increase texture width to decrease height.
-    //typedef ImFontAtlasRect           ImFontAtlasCustomRect;   // OBSOLETED in 1.92.0
+    //unsigned int                      FontBuilderFlags;        // OBSOLETED in 1.92.X: Renamed to FontLoaderFlags.
+    //int                               TexDesiredWidth;         // OBSOLETED in 1.92.X: Force texture width before calling Build(). Must be a power-of-two. If have many glyphs your graphics API have texture size restrictions you may want to increase texture width to decrease height.
+    //typedef ImFontAtlasRect           ImFontAtlasCustomRect;   // OBSOLETED in 1.92.X
     //typedef ImFontAtlasCustomRect     CustomRect;              // OBSOLETED in 1.72+
     //typedef ImFontGlyphRangesBuilder  GlyphRangesBuilder;      // OBSOLETED in 1.67+
 };
@@ -3796,7 +3789,7 @@ struct ImFontBaked
     unsigned int                LoadNoRenderOnLayout:1;// 0  //     // Enable a two-steps mode where CalcTextSize() calls will load AdvanceX *without* rendering/packing glyphs. Only advantagous if you know that the glyph is unlikely to actually be rendered, otherwise it is slower because we'd do one query on the first CalcTextSize and one query on the first Draw.
     int                         LastUsedFrame;         // 4  //     // Record of that time this was bounds
     ImGuiID                     BakedId;            // 4     //     // Unique ID for this baked storage
-    ImFont*                     OwnerFont;          // 4-8   // in  // Parent font
+    ImFont*                     ContainerFont;      // 4-8   // in  // Parent font
     void*                       FontLoaderDatas;    // 4-8   //     // Font loader opaque storage (per baked font * sources): single contiguous buffer allocated by imgui, passed to loader.
 
     // Functions
@@ -3820,14 +3813,14 @@ enum ImFontFlags_
 
 // Font runtime data and rendering
 // - ImFontAtlas automatically loads a default embedded font for you if you didn't load one manually.
-// - Since 1.92.0 a font may be rendered as any size! Therefore a font doesn't have one specific size.
+// - Since 1.92.X a font may be rendered as any size! Therefore a font doesn't have one specific size.
 // - Use 'font->GetFontBaked(size)' to retrieve the ImFontBaked* corresponding to a given size.
 // - If you used g.Font + g.FontSize (which is frequent from the ImGui layer), you can use g.FontBaked as a shortcut, as g.FontBaked == g.Font->GetFontBaked(g.FontSize).
 struct ImFont
 {
     // [Internal] Members: Hot ~12-20 bytes
     ImFontBaked*                LastBaked;          // 4-8   // Cache last bound baked. NEVER USE DIRECTLY. Use GetFontBaked().
-    ImFontAtlas*                OwnerAtlas;         // 4-8   // What we have been loaded into.
+    ImFontAtlas*                ContainerAtlas;     // 4-8   // What we have been loaded into.
     ImFontFlags                 Flags;              // 4     // Font flags.
     float                       CurrentRasterizerDensity;    // Current rasterizer density. This is a varying state of the font.
 
@@ -3835,7 +3828,7 @@ struct ImFont
     // Conceptually Sources[] is the list of font sources merged to create this font.
     ImGuiID                     FontId;             // Unique identifier for the font
     float                       LegacySize;         // 4     // in  // Font size passed to AddFont(). Use for old code calling PushFont() expecting to use that size. (use ImGui::GetFontBaked() to get font baked at current bound size).
-    ImVector<ImFontConfig*>     Sources;            // 16    // in  // List of sources. Pointers within OwnerAtlas->Sources[]
+    ImVector<ImFontConfig*>     Sources;            // 16    // in  // List of sources. Pointers within ContainerAtlas->Sources[]
     ImWchar                     EllipsisChar;       // 2-4   // out // Character used for ellipsis rendering ('...').
     ImWchar                     FallbackChar;       // 2-4   // out // Character used if a glyph isn't found (U+FFFD, '?')
     ImU8                        Used8kPagesMap[(IM_UNICODE_CODEPOINT_MAX+1)/8192/8]; // 1 bytes if ImWchar=ImWchar16, 16 bytes if ImWchar==ImWchar32. Store 1-bit for each block of 4K codepoints that has one active glyph. This is mainly used to facilitate iterations across all used codepoints.
@@ -3849,7 +3842,7 @@ struct ImFont
     IMGUI_API ImFont();
     IMGUI_API ~ImFont();
     IMGUI_API bool              IsGlyphInFont(ImWchar c);
-    bool                        IsLoaded() const                { return OwnerAtlas != NULL; }
+    bool                        IsLoaded() const                { return ContainerAtlas != NULL; }
     const char*                 GetDebugName() const            { return Sources.Size ? Sources[0]->Name : "<unknown>"; } // Fill ImFontConfig::Name.
 
     // [Internal] Don't use!
@@ -4032,10 +4025,10 @@ namespace ImGui
     inline void         ShowStackToolWindow(bool* p_open = NULL)                { ShowIDStackToolWindow(p_open); }
     IMGUI_API bool      Combo(const char* label, int* current_item, bool (*old_callback)(void* user_data, int idx, const char** out_text), void* user_data, int items_count, int popup_max_height_in_items = -1);
     IMGUI_API bool      ListBox(const char* label, int* current_item, bool (*old_callback)(void* user_data, int idx, const char** out_text), void* user_data, int items_count, int height_in_items = -1);
+    // OBSOLETED in 1.89.7 (from June 2023)
+    IMGUI_API void      SetItemAllowOverlap();                                  // Use SetNextItemAllowOverlap() before item.
 
     // Some of the older obsolete names along with their replacement (commented out so they are not reported in IDE)
-    // OBSOLETED in 1.89.7 (from June 2023)
-    //IMGUI_API void      SetItemAllowOverlap();                                                      // Use SetNextItemAllowOverlap() _before_ item.
     //-- OBSOLETED in 1.89.4 (from March 2023)
     //static inline void  PushAllowKeyboardFocus(bool tab_stop)                                       { PushItemFlag(ImGuiItemFlags_NoTabStop, !tab_stop); }
     //static inline void  PopAllowKeyboardFocus()                                                     { PopItemFlag(); }
@@ -4101,7 +4094,7 @@ namespace ImGui
     //static inline void  SetScrollPosHere()                    { SetScrollHere(); }                                                // OBSOLETED in 1.42
 }
 
-//-- OBSOLETED in 1.92.0: ImFontAtlasCustomRect becomes ImTextureRect
+//-- OBSOLETED in 1.92.x: ImFontAtlasCustomRect becomes ImTextureRect
 // - ImFontAtlasCustomRect::X,Y          --> ImTextureRect::x,y
 // - ImFontAtlasCustomRect::Width,Height --> ImTextureRect::w,h
 // - ImFontAtlasCustomRect::GlyphColored --> if you need to write to this, instead you can write to 'font->Glyphs.back()->Colored' after calling AddCustomRectFontGlyph()
@@ -4137,7 +4130,7 @@ typedef ImFontAtlasRect ImFontAtlasCustomRect;
 //};
 
 // RENAMED and MERGED both ImGuiKey_ModXXX and ImGuiModFlags_XXX into ImGuiMod_XXX (from September 2022)
-// RENAMED ImGuiKeyModFlags -> ImGuiModFlags in 1.88 (from April 2022). Exceptionally commented out ahead of obsolescence schedule to reduce confusion and because they were not meant to be used in the first place.
+// RENAMED ImGuiKeyModFlags -> ImGuiModFlags in 1.88 (from April 2022). Exceptionally commented out ahead of obscolescence schedule to reduce confusion and because they were not meant to be used in the first place.
 //typedef ImGuiKeyChord ImGuiModFlags;      // == int. We generally use ImGuiKeyChord to mean "a ImGuiKey or-ed with any number of ImGuiMod_XXX value", so you may store mods in there.
 //enum ImGuiModFlags_ { ImGuiModFlags_None = 0, ImGuiModFlags_Ctrl = ImGuiMod_Ctrl, ImGuiModFlags_Shift = ImGuiMod_Shift, ImGuiModFlags_Alt = ImGuiMod_Alt, ImGuiModFlags_Super = ImGuiMod_Super };
 //typedef ImGuiKeyChord ImGuiKeyModFlags; // == int

@@ -392,17 +392,6 @@ IMPLEMENTING SUPPORT for ImGuiBackendFlags_RendererHasTextures:
  When you are not sure about an old symbol or function name, try using the Search/Find function of your IDE to look for comments or references in all imgui files.
  You can read releases logs https://github.com/ocornut/imgui/releases for more details.
 
- - 2025/11/06 (1.92.5) - BeginChild: commented out some legacy names which were obsoleted in 1.90.0 (Nov 2023), 1.90.9 (July 2024), 1.91.1 (August 2024):
-                         - ImGuiChildFlags_Border                    --> ImGuiChildFlags_Borders
-                         - ImGuiWindowFlags_NavFlattened             --> ImGuiChildFlags_NavFlattened (moved to ImGuiChildFlags). BeginChild(name, size, 0, ImGuiWindowFlags_NavFlattened) --> BeginChild(name, size, ImGuiChildFlags_NavFlattened, 0)
-                         - ImGuiWindowFlags_AlwaysUseWindowPadding   --> ImGuiChildFlags_AlwaysUseWindowPadding (moved to ImGuiChildFlags). BeginChild(name, size, 0, ImGuiWindowFlags_AlwaysUseWindowPadding) --> BeginChild(name, size, ImGuiChildFlags_AlwaysUseWindowPadding, 0)
- - 2025/11/06 (1.92.5) - Keys: commented out legacy names which were obsoleted in 1.89.0 (August 2022):
-                         - ImGuiKey_ModCtrl  --> ImGuiMod_Ctrl
-                         - ImGuiKey_ModShift --> ImGuiMod_Shift
-                         - ImGuiKey_ModAlt   --> ImGuiMod_Alt
-                         - ImGuiKey_ModSuper --> ImGuiMod_Super
- - 2025/11/06 (1.92.5) - IO: commented out legacy io.ClearInputCharacters() obsoleted in 1.89.8 (Aug 2023). Calling io.ClearInputKeys() is enough.
- - 2025/11/06 (1.92.5) - Commented out legacy SetItemAllowOverlap() obsoleted in 1.89.7: this never worked right. Use SetNextItemAllowOverlap() _before_ item instead.
  - 2025/10/14 (1.92.4) - TreeNode, Selectable, Clipper: commented out legacy names which were obsoleted in 1.89.7 (July 2023) and 1.89.9 (Sept 2023);
                          - ImGuiTreeNodeFlags_AllowItemOverlap       --> ImGuiTreeNodeFlags_AllowOverlap
                          - ImGuiSelectableFlags_AllowItemOverlap     --> ImGuiSelectableFlags_AllowOverlap
@@ -448,7 +437,7 @@ IMPLEMENTING SUPPORT for ImGuiBackendFlags_RendererHasTextures:
                              ImFontConfig cfg2;
                              cfg2.MergeMode = true;
                              io.Fonts->AddFontFromFileTTF("FontAwesome4.ttf", 0.0f, &cfg2);
-                         - You can use `Metrics/Debugger->Fonts->Font->Input Glyphs Overlap Detection Tool` to see list of glyphs available in multiple font sources. This can facilitate understanding which font input is providing which glyph.
+                         - You can use `Metrics/Debugger->Fonts->Font->Input Glyphs Overlap Detection Tool` to see list of glyphs available in multiple font sources. This can facilitate unde
                        - Fonts: **IMPORTANT** on Thread Safety:
                           - A few functions such as font->CalcTextSizeA() were, by sheer luck (== accidentally) thread-safe even thou we had never provided that guarantee. They are definitively not thread-safe anymore as new glyphs may be loaded.
                        - Fonts: ImFont::FontSize was removed and does not make sense anymore. ImFont::LegacySize is the size passed to AddFont().
@@ -1447,9 +1436,6 @@ ImGuiStyle::ImGuiStyle()
     TreeLinesFlags              = ImGuiTreeNodeFlags_DrawLinesNone;
     TreeLinesSize               = 1.0f;             // Thickness of outlines when using ImGuiTreeNodeFlags_DrawLines.
     TreeLinesRounding           = 0.0f;             // Radius of lines connecting child nodes to the vertical line.
-    DragDropTargetRounding      = 0.0f;             // Radius of the drag and drop target frame.
-    DragDropTargetBorderSize    = 2.0f;             // Thickness of the drag and drop target border.
-    DragDropTargetPadding       = 3.0f;             // Size to expand the drag and drop target from actual target item size.
     ColorButtonPosition         = ImGuiDir_Right;   // Side of the color button in the ColorEdit4 widget (left/right). Defaults to ImGuiDir_Right.
     ButtonTextAlign             = ImVec2(0.5f,0.5f);// Alignment of button text when button is larger than text.
     SelectableTextAlign         = ImVec2(0.0f,0.0f);// Alignment of selectable text. Defaults to (0.0f, 0.0f) (top-left aligned). It's generally important to keep this left-aligned if you want to lay multiple items on a same line.
@@ -1514,9 +1500,6 @@ void ImGuiStyle::ScaleAllSizes(float scale_factor)
     TabCloseButtonMinWidthUnselected = (TabCloseButtonMinWidthUnselected > 0.0f && TabCloseButtonMinWidthUnselected != FLT_MAX) ? ImTrunc(TabCloseButtonMinWidthUnselected * scale_factor) : TabCloseButtonMinWidthUnselected;
     TabBarOverlineSize = ImTrunc(TabBarOverlineSize * scale_factor);
     TreeLinesRounding = ImTrunc(TreeLinesRounding * scale_factor);
-    DragDropTargetRounding = ImTrunc(DragDropTargetRounding * scale_factor);
-    DragDropTargetBorderSize = ImTrunc(DragDropTargetBorderSize * scale_factor);
-    DragDropTargetPadding = ImTrunc(DragDropTargetPadding * scale_factor);
     SeparatorTextPadding = ImTrunc(SeparatorTextPadding * scale_factor);
     DisplayWindowPadding = ImTrunc(DisplayWindowPadding * scale_factor);
     DisplaySafeAreaPadding = ImTrunc(DisplaySafeAreaPadding * scale_factor);
@@ -1659,15 +1642,14 @@ void ImGuiIO::AddInputCharacterUTF16(ImWchar16 c)
     AddInputCharacter((unsigned)cp);
 }
 
-void ImGuiIO::AddInputCharactersUTF8(const char* str)
+void ImGuiIO::AddInputCharactersUTF8(const char* utf8_chars)
 {
     if (!AppAcceptingEvents)
         return;
-    const char* str_end = str + strlen(str);
-    while (*str != 0)
+    while (*utf8_chars != 0)
     {
         unsigned int c = 0;
-        str += ImTextCharFromUtf8(&c, str, str_end);
+        utf8_chars += ImTextCharFromUtf8(&c, utf8_chars, NULL);
         AddInputCharacter(c);
     }
 }
@@ -1715,6 +1697,15 @@ void ImGuiIO::ClearInputMouse()
     }
     MouseWheel = MouseWheelH = 0.0f;
 }
+
+// Removed this as it is ambiguous/misleading and generally incorrect to use with the existence of a higher-level input queue.
+// Current frame character buffer is now also cleared by ClearInputKeys().
+#ifndef IMGUI_DISABLE_OBSOLETE_FUNCTIONS
+void ImGuiIO::ClearInputCharacters()
+{
+    InputQueueCharacters.resize(0);
+}
+#endif
 
 static ImGuiInputEvent* FindLatestInputEvent(ImGuiContext* ctx, ImGuiInputEventType type, int arg = -1)
 {
@@ -2511,7 +2502,6 @@ int ImTextCharFromUtf8(unsigned int* out_char, const char* in_text, const char* 
     int len = lengths[*(const unsigned char*)in_text >> 3];
     int wanted = len + (len ? 0 : 1);
 
-    // IMPORTANT: if in_text_end == NULL it assume we have enough space!
     if (in_text_end == NULL)
         in_text_end = in_text + wanted; // Max length, nulls will be taken into account.
 
@@ -2671,27 +2661,15 @@ int ImTextCountUtf8BytesFromStr(const ImWchar* in_text, const ImWchar* in_text_e
     return bytes_count;
 }
 
-const char* ImTextFindPreviousUtf8Codepoint(const char* in_text_start, const char* in_p)
+const char* ImTextFindPreviousUtf8Codepoint(const char* in_text_start, const char* in_text_curr)
 {
-    while (in_p > in_text_start)
+    while (in_text_curr > in_text_start)
     {
-        in_p--;
-        if ((*in_p & 0xC0) != 0x80)
-            return in_p;
+        in_text_curr--;
+        if ((*in_text_curr & 0xC0) != 0x80)
+            return in_text_curr;
     }
     return in_text_start;
-}
-
-const char* ImTextFindValidUtf8CodepointEnd(const char* in_text_start, const char* in_text_end, const char* in_p)
-{
-    if (in_text_start == in_p)
-        return in_text_start;
-    const char* prev = ImTextFindPreviousUtf8Codepoint(in_text_start, in_p);
-    unsigned int prev_c;
-    int prev_c_len = ImTextCharFromUtf8(&prev_c, prev, in_text_end);
-    if (prev_c != IM_UNICODE_CODEPOINT_INVALID && prev_c_len <= (int)(in_p - prev))
-        return in_p;
-    return prev;
 }
 
 int ImTextCountLines(const char* in_text, const char* in_text_end)
@@ -3719,7 +3697,6 @@ const char* ImGui::GetStyleColorName(ImGuiCol idx)
     case ImGuiCol_TextSelectedBg: return "TextSelectedBg";
     case ImGuiCol_TreeLines: return "TreeLines";
     case ImGuiCol_DragDropTarget: return "DragDropTarget";
-    case ImGuiCol_DragDropTargetBg: return "DragDropTargetBg";
     case ImGuiCol_UnsavedMarker: return "UnsavedMarker";
     case ImGuiCol_NavCursor: return "NavCursor";
     case ImGuiCol_NavWindowingHighlight: return "NavWindowingHighlight";
@@ -4066,13 +4043,6 @@ ImGuiContext::ImGuiContext(ImFontAtlas* shared_font_atlas)
     InputTextState.Ctx = this;
 
     Initialized = false;
-    WithinFrameScope = WithinFrameScopeWithImplicitWindow = false;
-    TestEngineHookItems = false;
-    FrameCount = 0;
-    FrameCountEnded = FrameCountRendered = -1;
-    Time = 0.0f;
-    memset(ContextName, 0, sizeof(ContextName));
-
     Font = NULL;
     FontBaked = NULL;
     FontSize = FontSizeBase = FontBakedScale = CurrentDpiScale = 0.0f;
@@ -4080,8 +4050,15 @@ ImGuiContext::ImGuiContext(ImFontAtlas* shared_font_atlas)
     IO.Fonts = shared_font_atlas ? shared_font_atlas : IM_NEW(ImFontAtlas)();
     if (shared_font_atlas == NULL)
         IO.Fonts->OwnerContext = this;
+    Time = 0.0f;
+    FrameCount = 0;
+    FrameCountEnded = FrameCountRendered = -1;
     WithinEndChildID = 0;
+    WithinFrameScope = WithinFrameScopeWithImplicitWindow = false;
+    GcCompactAll = false;
+    TestEngineHookItems = false;
     TestEngine = NULL;
+    memset(ContextName, 0, sizeof(ContextName));
 
     InputEventsNextMouseSource = ImGuiMouseSource_Mouse;
     InputEventsNextEventId = 1;
@@ -4116,10 +4093,10 @@ ImGuiContext::ImGuiContext(ImFontAtlas* shared_font_atlas)
     ActiveIdHasBeenEditedThisFrame = false;
     ActiveIdFromShortcut = false;
     ActiveIdClickOffset = ImVec2(-1, -1);
-    ActiveIdSource = ImGuiInputSource_None;
     ActiveIdWindow = NULL;
-    ActiveIdMouseButton = -1;
+    ActiveIdSource = ImGuiInputSource_None;
     ActiveIdDisabledId = 0;
+    ActiveIdMouseButton = -1;
     ActiveIdPreviousFrame = 0;
     memset(&DeactivatedItemData, 0, sizeof(DeactivatedItemData));
     memset(&ActiveIdValueOnActivation, 0, sizeof(ActiveIdValueOnActivation));
@@ -4134,7 +4111,6 @@ ImGuiContext::ImGuiContext(ImFontAtlas* shared_font_atlas)
     CurrentFocusScopeId = 0;
     CurrentItemFlags = ImGuiItemFlags_None;
     DebugShowGroupRects = false;
-    GcCompactAll = false;
 
     NavCursorVisible = false;
     NavHighlightItemUnderNav = false;
@@ -4190,7 +4166,7 @@ ImGuiContext::ImGuiContext(ImFontAtlas* shared_font_atlas)
     DragDropMouseButton = -1;
     DragDropTargetId = 0;
     DragDropTargetFullViewport = 0;
-    DragDropAcceptFlagsCurr = DragDropAcceptFlagsPrev = ImGuiDragDropFlags_None;
+    DragDropAcceptFlags = ImGuiDragDropFlags_None;
     DragDropAcceptIdCurrRectSurface = 0.0f;
     DragDropAcceptIdPrev = DragDropAcceptIdCurr = 0;
     DragDropAcceptFrameCount = -1;
@@ -4243,12 +4219,12 @@ ImGuiContext::ImGuiContext(ImFontAtlas* shared_font_atlas)
     memset(LocalizationTable, 0, sizeof(LocalizationTable));
 
     LogEnabled = false;
-    LogLineFirstItem = false;
     LogFlags = ImGuiLogFlags_None;
     LogWindow = NULL;
     LogNextPrefix = LogNextSuffix = NULL;
     LogFile = NULL;
     LogLinePosY = FLT_MAX;
+    LogLineFirstItem = false;
     LogDepthRef = 0;
     LogDepthToExpand = LogDepthToExpandDefault = 2;
 
@@ -4284,11 +4260,6 @@ ImGuiContext::ImGuiContext(ImFontAtlas* shared_font_atlas)
     FramerateSecPerFrameAccum = 0.0f;
     WantCaptureMouseNextFrame = WantCaptureKeyboardNextFrame = WantTextInputNextFrame = -1;
     memset(TempKeychordName, 0, sizeof(TempKeychordName));
-}
-
-ImGuiContext::~ImGuiContext()
-{
-    IM_ASSERT(Initialized == false && "Forgot to call DestroyContext()?");
 }
 
 void ImGui::Initialize()
@@ -4486,8 +4457,8 @@ ImGuiWindow::ImGuiWindow(ImGuiContext* ctx, const char* name) : DrawListInst(NUL
     MoveId = GetID("#MOVE");
     ScrollTarget = ImVec2(FLT_MAX, FLT_MAX);
     ScrollTargetCenterRatio = ImVec2(0.5f, 0.5f);
-    AutoPosLastDirection = ImGuiDir_None;
     AutoFitFramesX = AutoFitFramesY = -1;
+    AutoPosLastDirection = ImGuiDir_None;
     SetWindowPosAllowFlags = SetWindowSizeAllowFlags = SetWindowCollapsedAllowFlags = 0;
     SetWindowPosVal = SetWindowPosPivot = ImVec2(FLT_MAX, FLT_MAX);
     LastFrameActive = -1;
@@ -5226,28 +5197,26 @@ void ImGui::UpdateMouseMovingWindowEndFrame()
     if (g.NavWindow && g.NavWindow->Appearing)
         return;
 
-    ImGuiWindow* hovered_window = g.HoveredWindow;
-
     // Click on empty space to focus window and start moving
     // (after we're done with all our widgets)
     if (g.IO.MouseClicked[0])
     {
         // Handle the edge case of a popup being closed while clicking in its empty space.
         // If we try to focus it, FocusWindow() > ClosePopupsOverWindow() will accidentally close any parent popups because they are not linked together any more.
-        ImGuiWindow* hovered_root = hovered_window ? hovered_window->RootWindow : NULL;
-        const bool is_closed_popup = hovered_root && (hovered_root->Flags & ImGuiWindowFlags_Popup) && !IsPopupOpen(hovered_root->PopupId, ImGuiPopupFlags_AnyPopupLevel);
+        ImGuiWindow* root_window = g.HoveredWindow ? g.HoveredWindow->RootWindow : NULL;
+        const bool is_closed_popup = root_window && (root_window->Flags & ImGuiWindowFlags_Popup) && !IsPopupOpen(root_window->PopupId, ImGuiPopupFlags_AnyPopupLevel);
 
-        if (hovered_window != NULL && !is_closed_popup)
+        if (root_window != NULL && !is_closed_popup)
         {
-            StartMouseMovingWindow(hovered_window); //-V595
+            StartMouseMovingWindow(g.HoveredWindow); //-V595
 
-            // FIXME: In principle we might be able to call StopMouseMovingWindow() below.
+            // FIXME: In principal we might be able to call StopMouseMovingWindow() below.
             // Please note how StartMouseMovingWindow() and StopMouseMovingWindow() and not entirely symetrical, at the later doesn't clear ActiveId.
 
             // Cancel moving if clicked outside of title bar
-            if ((hovered_window->BgClickFlags & ImGuiWindowBgClickFlags_Move) == 0) // set by io.ConfigWindowsMoveFromTitleBarOnly
-                if (!(hovered_root->Flags & ImGuiWindowFlags_NoTitleBar))
-                    if (!hovered_root->TitleBarRect().Contains(g.IO.MouseClickedPos[0]))
+            if (g.IO.ConfigWindowsMoveFromTitleBarOnly)
+                if (!(root_window->Flags & ImGuiWindowFlags_NoTitleBar))
+                    if (!root_window->TitleBarRect().Contains(g.IO.MouseClickedPos[0]))
                         g.MovingWindow = NULL;
 
             // Cancel moving if clicked over an item which was disabled or inhibited by popups
@@ -5258,7 +5227,7 @@ void ImGui::UpdateMouseMovingWindowEndFrame()
                 g.ActiveIdDisabledId = g.HoveredId;
             }
         }
-        else if (hovered_window == NULL && g.NavWindow != NULL)
+        else if (root_window == NULL && g.NavWindow != NULL)
         {
             // Clicking on void disable focus
             FocusWindow(NULL, ImGuiFocusRequestFlags_UnlessBelowModal);
@@ -5273,8 +5242,8 @@ void ImGui::UpdateMouseMovingWindowEndFrame()
         // Find the top-most window between HoveredWindow and the top-most Modal Window.
         // This is where we can trim the popup stack.
         ImGuiWindow* modal = GetTopMostPopupModal();
-        bool hovered_window_above_modal = hovered_window && (modal == NULL || IsWindowAbove(hovered_window, modal));
-        ClosePopupsOverWindow(hovered_window_above_modal ? hovered_window : modal, true);
+        bool hovered_window_above_modal = g.HoveredWindow && (modal == NULL || IsWindowAbove(g.HoveredWindow, modal));
+        ClosePopupsOverWindow(hovered_window_above_modal ? g.HoveredWindow : modal, true);
     }
 }
 
@@ -5528,8 +5497,6 @@ void ImGui::NewFrame()
     // Drag and drop
     g.DragDropAcceptIdPrev = g.DragDropAcceptIdCurr;
     g.DragDropAcceptIdCurr = 0;
-    g.DragDropAcceptFlagsPrev = g.DragDropAcceptFlagsCurr;
-    g.DragDropAcceptFlagsCurr = ImGuiDragDropFlags_None;
     g.DragDropAcceptIdCurrRectSurface = FLT_MAX;
     g.DragDropWithinSource = false;
     g.DragDropWithinTarget = false;
@@ -5881,9 +5848,9 @@ void ImGui::EndFrame()
     ImGuiPlatformImeData* ime_data = &g.PlatformImeData;
     if (g.PlatformIO.Platform_SetImeDataFn != NULL && memcmp(ime_data, &g.PlatformImeDataPrev, sizeof(ImGuiPlatformImeData)) != 0)
     {
+        IMGUI_DEBUG_LOG_IO("[io] Calling Platform_SetImeDataFn(): WantVisible: %d, InputPos (%.2f,%.2f)\n", ime_data->WantVisible, ime_data->InputPos.x, ime_data->InputPos.y);
         IM_ASSERT(ime_data->ViewportId == IMGUI_VIEWPORT_DEFAULT_ID); // master branch
         ImGuiViewport* viewport = GetMainViewport();
-        IMGUI_DEBUG_LOG_IO("[io] Calling Platform_SetImeDataFn(): WantVisible: %d, InputPos (%.2f,%.2f) for Viewport 0x%08X\n", ime_data->WantVisible, ime_data->InputPos.x, ime_data->InputPos.y, viewport->ID);
         g.PlatformIO.Platform_SetImeDataFn(&g, viewport, ime_data);
     }
     g.WantTextInputNextFrame = ime_data->WantTextInput ? 1 : 0;
@@ -6230,16 +6197,16 @@ void ImGui::SetNextItemAllowOverlap()
 
 #ifndef IMGUI_DISABLE_OBSOLETE_FUNCTIONS
 // Allow last item to be overlapped by a subsequent item. Both may be activated during the same frame before the later one takes priority.
-// Use SetNextItemAllowOverlap() *before* your item instead of calling this!
-//void ImGui::SetItemAllowOverlap()
-//{
-//    ImGuiContext& g = *GImGui;
-//    ImGuiID id = g.LastItemData.ID;
-//    if (g.HoveredId == id)
-//        g.HoveredIdAllowOverlap = true;
-//    if (g.ActiveId == id) // Before we made this obsolete, most calls to SetItemAllowOverlap() used to avoid this path by testing g.ActiveId != id.
-//        g.ActiveIdAllowOverlap = true;
-//}
+// FIXME-LEGACY: Use SetNextItemAllowOverlap() *before* your item instead.
+void ImGui::SetItemAllowOverlap()
+{
+    ImGuiContext& g = *GImGui;
+    ImGuiID id = g.LastItemData.ID;
+    if (g.HoveredId == id)
+        g.HoveredIdAllowOverlap = true;
+    if (g.ActiveId == id) // Before we made this obsolete, most calls to SetItemAllowOverlap() used to avoid this path by testing g.ActiveId != id.
+        g.ActiveIdAllowOverlap = true;
+}
 #endif
 
 // This is a shortcut for not taking ownership of 100+ keys, frequently used by drag operations.
@@ -6307,10 +6274,10 @@ bool ImGui::BeginChildEx(const char* name, ImGuiID id, const ImVec2& size_arg, I
         IM_ASSERT((child_flags & (ImGuiChildFlags_AutoResizeX | ImGuiChildFlags_AutoResizeY)) != 0 && "Must use ImGuiChildFlags_AutoResizeX or ImGuiChildFlags_AutoResizeY with ImGuiChildFlags_AlwaysAutoResize!");
     }
 #ifndef IMGUI_DISABLE_OBSOLETE_FUNCTIONS
-    //if (window_flags & ImGuiWindowFlags_AlwaysUseWindowPadding)
-    //    child_flags |= ImGuiChildFlags_AlwaysUseWindowPadding;
-    //if (window_flags & ImGuiWindowFlags_NavFlattened)
-    //    child_flags |= ImGuiChildFlags_NavFlattened;
+    if (window_flags & ImGuiWindowFlags_AlwaysUseWindowPadding)
+        child_flags |= ImGuiChildFlags_AlwaysUseWindowPadding;
+    if (window_flags & ImGuiWindowFlags_NavFlattened)
+        child_flags |= ImGuiChildFlags_NavFlattened;
 #endif
     if (child_flags & ImGuiChildFlags_AutoResizeX)
         child_flags &= ~ImGuiChildFlags_ResizeX;
@@ -6798,7 +6765,7 @@ static int ImGui::UpdateWindowManualResize(ImGuiWindow* window, const ImVec2& si
     const float grip_hover_outer_size = g.WindowsBorderHoverPadding;
 
     ImRect clamp_rect = visibility_rect;
-    const bool window_move_from_title_bar = !(window->BgClickFlags & ImGuiWindowBgClickFlags_Move) && !(window->Flags & ImGuiWindowFlags_NoTitleBar);
+    const bool window_move_from_title_bar = g.IO.ConfigWindowsMoveFromTitleBarOnly && !(window->Flags & ImGuiWindowFlags_NoTitleBar);
     if (window_move_from_title_bar)
         clamp_rect.Min.y -= window->TitleBarHeight;
 
@@ -6987,8 +6954,9 @@ static int ImGui::UpdateWindowManualResize(ImGuiWindow* window, const ImVec2& si
 
 static inline void ClampWindowPos(ImGuiWindow* window, const ImRect& visibility_rect)
 {
+    ImGuiContext& g = *GImGui;
     ImVec2 size_for_clamping = window->Size;
-    if (!(window->BgClickFlags & ImGuiWindowBgClickFlags_Move) && !(window->Flags & ImGuiWindowFlags_NoTitleBar))
+    if (g.IO.ConfigWindowsMoveFromTitleBarOnly && !(window->Flags & ImGuiWindowFlags_NoTitleBar))
         size_for_clamping.y = window->TitleBarHeight;
     window->Pos = ImClamp(window->Pos, visibility_rect.Min - size_for_clamping, visibility_rect.Max);
 }
@@ -7820,7 +7788,7 @@ bool ImGui::Begin(const char* name, bool* p_open, ImGuiWindowFlags flags)
 
         // Setup draw list and outer clipping rectangle
         IM_ASSERT(window->DrawList->CmdBuffer.Size == 1 && window->DrawList->CmdBuffer[0].ElemCount == 0);
-        window->DrawList->PushTexture(g.Font->OwnerAtlas->TexRef);
+        window->DrawList->PushTexture(g.Font->ContainerAtlas->TexRef);
         PushClipRect(host_rect.Min, host_rect.Max, false);
 
         // Child windows can render their decoration (bg color, border, scrollbars, etc.) within their parent to save a draw call (since 1.71)
@@ -7956,11 +7924,6 @@ bool ImGui::Begin(const char* name, bool* p_open, ImGuiWindowFlags flags)
 
         if (flags & ImGuiWindowFlags_Tooltip)
             g.TooltipPreviousWindow = window;
-
-        // Set default BgClickFlags
-        // This is set at the end of this function, so UpdateManualResize()/ClampWindowPos() may use last-frame value if overriden by user code.
-        // FIXME: The general intent is that we will later expose config options to default to enable scrolling + select scrolling mouse button.
-        window->BgClickFlags = (flags & ImGuiWindowFlags_ChildWindow) ? parent_window->BgClickFlags : (g.IO.ConfigWindowsMoveFromTitleBarOnly ? ImGuiWindowBgClickFlags_None : ImGuiWindowBgClickFlags_Move);
 
         // We fill last item data based on Title Bar/Tab, in order for IsItemHovered() and IsItemActive() to be usable after Begin().
         // This is useful to allow creating context menus on title bar only, etc.
@@ -8922,7 +8885,7 @@ void ImGui::SetCurrentFont(ImFont* font, float font_size_before_scaling, float f
 #ifndef IMGUI_DISABLE_OBSOLETE_FUNCTIONS
         IM_ASSERT(font->Scale > 0.0f);
 #endif
-        ImFontAtlas* atlas = font->OwnerAtlas;
+        ImFontAtlas* atlas = font->ContainerAtlas;
         g.DrawListSharedData.FontAtlas = atlas;
         g.DrawListSharedData.Font = font;
         ImFontAtlasUpdateDrawListsSharedData(atlas);
@@ -11131,7 +11094,7 @@ bool ImGui::ItemAdd(const ImRect& bb, ImGuiID id, const ImRect* nav_bb_arg, ImGu
         // If we crash on a NULL g.NavWindow we need to fix the bug elsewhere.
         if (!(g.LastItemData.ItemFlags & ImGuiItemFlags_NoNav))
         {
-            // FIXME-NAV: investigate changing the window tests into a simple 'if (g.NavFocusScopeId == g.CurrentFocusScopeId)' test.
+            // FIMXE-NAV: investigate changing the window tests into a simple 'if (g.NavFocusScopeId == g.CurrentFocusScopeId)' test.
             window->DC.NavLayersActiveMaskNext |= (1 << window->DC.NavLayerCurrent);
             if (g.NavId == id || g.NavAnyRequest)
                 if (g.NavWindow->RootWindowForNav == window->RootWindowForNav)
@@ -11913,7 +11876,7 @@ bool ImGui::BeginTooltipEx(ImGuiTooltipFlags tooltip_flags, ImGuiWindowFlags ext
         }
 
         SetNextWindowBgAlpha(g.Style.Colors[ImGuiCol_PopupBg].w * 0.60f);
-        //PushStyleVar(ImGuiStyleVar_Alpha, g.Style.Alpha * 0.60f); // This would be nice but e.g ColorButton with checkerboard has issue with transparent colors :(
+        //PushStyleVar(ImGuiStyleVar_Alpha, g.Style.Alpha * 0.60f); // This would be nice but e.g ColorButton with checkboard has issue with transparent colors :(
         tooltip_flags |= ImGuiTooltipFlags_OverridePrevious;
     }
 
@@ -12470,10 +12433,10 @@ ImVec2 ImGui::FindBestWindowPosForPopupEx(const ImVec2& ref_pos, const ImVec2& s
     // Combo Box policy (we want a connecting edge)
     if (policy == ImGuiPopupPositionPolicy_ComboBox)
     {
-        const ImGuiDir dir_preferred_order[ImGuiDir_COUNT] = { ImGuiDir_Down, ImGuiDir_Right, ImGuiDir_Left, ImGuiDir_Up };
+        const ImGuiDir dir_prefered_order[ImGuiDir_COUNT] = { ImGuiDir_Down, ImGuiDir_Right, ImGuiDir_Left, ImGuiDir_Up };
         for (int n = (*last_dir != ImGuiDir_None) ? -1 : 0; n < ImGuiDir_COUNT; n++)
         {
-            const ImGuiDir dir = (n == -1) ? *last_dir : dir_preferred_order[n];
+            const ImGuiDir dir = (n == -1) ? *last_dir : dir_prefered_order[n];
             if (n != -1 && dir == *last_dir) // Already tried this direction?
                 continue;
             ImVec2 pos;
@@ -12492,10 +12455,10 @@ ImVec2 ImGui::FindBestWindowPosForPopupEx(const ImVec2& ref_pos, const ImVec2& s
     // (Always first try the direction we used on the last frame, if any)
     if (policy == ImGuiPopupPositionPolicy_Tooltip || policy == ImGuiPopupPositionPolicy_Default)
     {
-        const ImGuiDir dir_preferred_order[ImGuiDir_COUNT] = { ImGuiDir_Right, ImGuiDir_Down, ImGuiDir_Up, ImGuiDir_Left };
+        const ImGuiDir dir_prefered_order[ImGuiDir_COUNT] = { ImGuiDir_Right, ImGuiDir_Down, ImGuiDir_Up, ImGuiDir_Left };
         for (int n = (*last_dir != ImGuiDir_None) ? -1 : 0; n < ImGuiDir_COUNT; n++)
         {
-            const ImGuiDir dir = (n == -1) ? *last_dir : dir_preferred_order[n];
+            const ImGuiDir dir = (n == -1) ? *last_dir : dir_prefered_order[n];
             if (n != -1 && dir == *last_dir) // Already tried this direction?
                 continue;
 
@@ -14554,7 +14517,7 @@ void ImGui::ClearDragDrop()
         IMGUI_DEBUG_LOG_ACTIVEID("[dragdrop] ClearDragDrop()\n");
     g.DragDropActive = false;
     g.DragDropPayload.Clear();
-    g.DragDropAcceptFlagsCurr = ImGuiDragDropFlags_None;
+    g.DragDropAcceptFlags = ImGuiDragDropFlags_None;
     g.DragDropAcceptIdCurr = g.DragDropAcceptIdPrev = 0;
     g.DragDropAcceptIdCurrRectSurface = FLT_MAX;
     g.DragDropAcceptFrameCount = -1;
@@ -14683,11 +14646,11 @@ bool ImGui::BeginDragDropSource(ImGuiDragDropFlags flags)
         // Target can request the Source to not display its tooltip (we use a dedicated flag to make this request explicit)
         // We unfortunately can't just modify the source flags and skip the call to BeginTooltip, as caller may be emitting contents.
         bool ret;
-        if (g.DragDropAcceptIdPrev && (g.DragDropAcceptFlagsPrev & ImGuiDragDropFlags_AcceptNoPreviewTooltip))
+        if (g.DragDropAcceptIdPrev && (g.DragDropAcceptFlags & ImGuiDragDropFlags_AcceptNoPreviewTooltip))
             ret = BeginTooltipHidden();
         else
             ret = BeginTooltip();
-        IM_ASSERT(ret); // FIXME-NEWBEGIN: If this ever becomes false, we need to Begin("##Hidden", NULL, ImGuiWindowFlags_NoSavedSettings) + SetWindowHiddenAndSkipItemsForCurrentFrame().
+        IM_ASSERT(ret); // FIXME-NEWBEGIN: If this ever becomes false, we need to Begin("##Hidden", NULL, ImGuiWindowFlags_NoSavedSettings) + SetWindowHiddendAndSkipItemsForCurrentFrame().
         IM_UNUSED(ret);
     }
 
@@ -14864,7 +14827,7 @@ const ImGuiPayload* ImGui::AcceptDragDropPayload(const char* type, ImGuiDragDrop
     if (r_surface > g.DragDropAcceptIdCurrRectSurface)
         return NULL;
 
-    g.DragDropAcceptFlagsCurr = flags;
+    g.DragDropAcceptFlags = flags;
     g.DragDropAcceptIdCurr = g.DragDropTargetId;
     g.DragDropAcceptIdCurrRectSurface = r_surface;
     //IMGUI_DEBUG_LOG("AcceptDragDropPayload(): %08X: accept\n", g.DragDropTargetId);
@@ -14904,7 +14867,7 @@ void ImGui::RenderDragDropTargetRectForItem(const ImRect& bb)
     ImGuiWindow* window = g.CurrentWindow;
     ImRect bb_display = bb;
     bb_display.ClipWith(g.DragDropTargetClipRect); // Clip THEN expand so we have a way to visualize that target is not entirely visible.
-    bb_display.Expand(g.Style.DragDropTargetPadding);
+    bb_display.Expand(3.5f);
     bool push_clip_rect = !window->ClipRect.Contains(bb_display);
     if (push_clip_rect)
         window->DrawList->PushClipRectFullScreen();
@@ -14915,9 +14878,7 @@ void ImGui::RenderDragDropTargetRectForItem(const ImRect& bb)
 
 void ImGui::RenderDragDropTargetRectEx(ImDrawList* draw_list, const ImRect& bb)
 {
-    ImGuiContext& g = *GImGui;
-    draw_list->AddRectFilled(bb.Min, bb.Max, GetColorU32(ImGuiCol_DragDropTargetBg), g.Style.DragDropTargetRounding, 0);
-    draw_list->AddRect(bb.Min, bb.Max, GetColorU32(ImGuiCol_DragDropTarget), g.Style.DragDropTargetRounding, 0, g.Style.DragDropTargetBorderSize);
+    draw_list->AddRect(bb.Min, bb.Max, GetColorU32(ImGuiCol_DragDropTarget), 0.0f, 0, 2.0f); // FIXME-DPI
 }
 
 const ImGuiPayload* ImGui::GetDragDropPayload()
@@ -16030,11 +15991,10 @@ void ImGui::DebugTextEncoding(const char* str)
     TableSetupColumn("Glyph");
     TableSetupColumn("Codepoint");
     TableHeadersRow();
-    const char* str_end = str + strlen(str); // As we may receive malformed UTF-8, pass an explicit end instead of relying on ImTextCharFromUtf8() assuming enough space.
     for (const char* p = str; *p != 0; )
     {
         unsigned int c;
-        const int c_utf8_len = ImTextCharFromUtf8(&c, p, str_end);
+        const int c_utf8_len = ImTextCharFromUtf8(&c, p, NULL);
         TableNextColumn();
         Text("%d", (int)(p - str));
         TableNextColumn();
@@ -16434,7 +16394,7 @@ void ImGui::ShowMetricsWindow(bool* p_open)
 
                 BulletText("Table 0x%08X (%d columns, in '%s')", table->ID, table->ColumnsCount, table->OuterWindow->Name);
                 if (IsItemHovered())
-                    GetForegroundDrawList(table->OuterWindow)->AddRect(table->OuterRect.Min - ImVec2(1, 1), table->OuterRect.Max + ImVec2(1, 1), IM_COL32(255, 255, 0, 255), 0.0f, 0, 2.0f);
+                    GetForegroundDrawList()->AddRect(table->OuterRect.Min - ImVec2(1, 1), table->OuterRect.Max + ImVec2(1, 1), IM_COL32(255, 255, 0, 255), 0.0f, 0, 2.0f);
                 Indent();
                 char buf[128];
                 for (int rect_n = 0; rect_n < TRT_Count; rect_n++)
@@ -16449,7 +16409,7 @@ void ImGui::ShowMetricsWindow(bool* p_open)
                             ImFormatString(buf, IM_ARRAYSIZE(buf), "(%6.1f,%6.1f) (%6.1f,%6.1f) Size (%6.1f,%6.1f) Col %d %s", r.Min.x, r.Min.y, r.Max.x, r.Max.y, r.GetWidth(), r.GetHeight(), column_n, trt_rects_names[rect_n]);
                             Selectable(buf);
                             if (IsItemHovered())
-                                GetForegroundDrawList(table->OuterWindow)->AddRect(r.Min - ImVec2(1, 1), r.Max + ImVec2(1, 1), IM_COL32(255, 255, 0, 255), 0.0f, 0, 2.0f);
+                                GetForegroundDrawList()->AddRect(r.Min - ImVec2(1, 1), r.Max + ImVec2(1, 1), IM_COL32(255, 255, 0, 255), 0.0f, 0, 2.0f);
                         }
                     }
                     else
@@ -16458,7 +16418,7 @@ void ImGui::ShowMetricsWindow(bool* p_open)
                         ImFormatString(buf, IM_ARRAYSIZE(buf), "(%6.1f,%6.1f) (%6.1f,%6.1f) Size (%6.1f,%6.1f) %s", r.Min.x, r.Min.y, r.Max.x, r.Max.y, r.GetWidth(), r.GetHeight(), trt_rects_names[rect_n]);
                         Selectable(buf);
                         if (IsItemHovered())
-                            GetForegroundDrawList(table->OuterWindow)->AddRect(r.Min - ImVec2(1, 1), r.Max + ImVec2(1, 1), IM_COL32(255, 255, 0, 255), 0.0f, 0, 2.0f);
+                            GetForegroundDrawList()->AddRect(r.Min - ImVec2(1, 1), r.Max + ImVec2(1, 1), IM_COL32(255, 255, 0, 255), 0.0f, 0, 2.0f);
                     }
                 }
                 Unindent();
@@ -17101,7 +17061,7 @@ void ImGui::DebugNodeFont(ImFont* font)
 {
     ImGuiContext& g = *GImGui;
     ImGuiMetricsConfig* cfg = &g.DebugMetricsConfig;
-    ImFontAtlas* atlas = font->OwnerAtlas;
+    ImFontAtlas* atlas = font->ContainerAtlas;
     bool opened = TreeNode(font, "Font: \"%s\": %d sources(s)", font->GetDebugName(), font->Sources.Size);
 
     // Display preview text
@@ -17216,7 +17176,7 @@ void ImGui::DebugNodeFont(ImFont* font)
     for (int baked_n = 0; baked_n < atlas->Builder->BakedPool.Size; baked_n++)
     {
         ImFontBaked* baked = &atlas->Builder->BakedPool[baked_n];
-        if (baked->OwnerFont != font)
+        if (baked->ContainerFont != font)
             continue;
         PushID(baked_n);
         if (TreeNode("Glyphs", "Baked at { %.2fpx, d.%.2f }: %d glyphs%s", baked->Size, baked->RasterizerDensity, baked->Glyphs.Size, (baked->LastUsedFrame < atlas->Builder->FrameCount - 1) ? " *Unused*" : ""))
@@ -17307,7 +17267,7 @@ void ImGui::DebugNodeFontGlyph(ImFont* font, const ImFontGlyph* glyph)
     Text("UV: (%.3f,%.3f)->(%.3f,%.3f)", glyph->U0, glyph->V0, glyph->U1, glyph->V1);
     if (glyph->PackId >= 0)
     {
-        ImTextureRect* r = ImFontAtlasPackGetRect(font->OwnerAtlas, glyph->PackId);
+        ImTextureRect* r = ImFontAtlasPackGetRect(font->ContainerAtlas, glyph->PackId);
         Text("PackId: 0x%X (%dx%d rect at %d,%d)", glyph->PackId, r->w, r->h, r->x, r->y);
     }
     Text("SourceIdx: %d", glyph->SourceIdx);
@@ -17346,7 +17306,7 @@ void ImGui::DebugNodeTabBar(ImGuiTabBar* tab_bar, const char* label)
     if (!is_active) { PopStyleColor(); }
     if (is_active && IsItemHovered())
     {
-        ImDrawList* draw_list = GetForegroundDrawList(tab_bar->Window);
+        ImDrawList* draw_list = GetForegroundDrawList();
         draw_list->AddRect(tab_bar->BarRect.Min, tab_bar->BarRect.Max, IM_COL32(255, 255, 0, 255));
         draw_list->AddLine(ImVec2(tab_bar->ScrollingRectMinX, tab_bar->BarRect.Min.y), ImVec2(tab_bar->ScrollingRectMinX, tab_bar->BarRect.Max.y), IM_COL32(0, 255, 0, 255));
         draw_list->AddLine(ImVec2(tab_bar->ScrollingRectMaxX, tab_bar->BarRect.Min.y), ImVec2(tab_bar->ScrollingRectMaxX, tab_bar->BarRect.Max.y), IM_COL32(0, 255, 0, 255));

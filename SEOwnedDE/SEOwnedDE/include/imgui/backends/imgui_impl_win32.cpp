@@ -21,7 +21,6 @@
 
 // CHANGELOG
 // (minor and older changes stripped away, please see git history for details)
-//  2025-10-19: Inputs: Revert previous change to allow for io.ClearInputKeys() on focus-out not losing gamepad state.
 //  2025-09-23: Inputs: Minor optimization not submitting gamepad input if packet number has not changed.
 //  2025-09-18: Call platform_io.ClearPlatformHandlers() on shutdown.
 //  2025-04-30: Inputs: Fixed an issue where externally losing mouse capture (due to e.g. focus loss) would fail to claim it again the next subsequent click. (#8594)
@@ -80,7 +79,7 @@
 //  2017-10-23: Inputs: Using Win32 ::SetCapture/::GetCapture() to retrieve mouse positions outside the client area when dragging.
 //  2016-11-12: Inputs: Only call Win32 ::SetCursor(nullptr) when io.MouseDrawCursor is set.
 
-#include "imgui.h"
+#include "../imgui.h"
 #ifndef IMGUI_DISABLE
 #include "imgui_impl_win32.h"
 #ifndef WIN32_LEAN_AND_MEAN
@@ -126,6 +125,7 @@ struct ImGui_ImplWin32_Data
     HMODULE                     XInputDLL;
     PFN_XInputGetCapabilities   XInputGetCapabilities;
     PFN_XInputGetState          XInputGetState;
+    DWORD                       XInputPacketNumber;
 #endif
 
     ImGui_ImplWin32_Data()      { memset((void*)this, 0, sizeof(*this)); }
@@ -357,6 +357,9 @@ static void ImGui_ImplWin32_UpdateGamepads(ImGuiIO& io)
     if (!bd->HasGamepad || bd->XInputGetState == nullptr || bd->XInputGetState(0, &xinput_state) != ERROR_SUCCESS)
         return;
     io.BackendFlags |= ImGuiBackendFlags_HasGamepad;
+    if (bd->XInputPacketNumber != 0 && bd->XInputPacketNumber == xinput_state.dwPacketNumber)
+        return;
+    bd->XInputPacketNumber = xinput_state.dwPacketNumber;
 
     #define IM_SATURATE(V)                      (V < 0.0f ? 0.0f : V > 1.0f ? 1.0f : V)
     #define MAP_BUTTON(KEY_NO, BUTTON_ENUM)     { io.AddKeyEvent(KEY_NO, (gamepad.wButtons & BUTTON_ENUM) != 0); }
