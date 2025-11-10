@@ -19,7 +19,7 @@ jobs:
 
     - name: Build
       working-directory: ${{ env.GITHUB_WORKSPACE }}
-      run: msbuild SEOwnedDE.sln /p:Platform=${{ matrix.platform }} /p:Configuration=${{ matrix.configuration }}
+      run: msbuild SEOwnedDE/SEOwnedDE.sln /p:Platform=${{ matrix.platform }} /p:Configuration=${{ matrix.configuration }}
     
     - uses: actions/upload-artifact@v4
       with:
