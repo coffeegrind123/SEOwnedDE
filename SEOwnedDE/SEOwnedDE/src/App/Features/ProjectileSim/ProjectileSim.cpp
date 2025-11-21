@@ -18,6 +18,27 @@ bool CProjectileSim::GetInfo(C_TFPlayer *player, C_TFWeaponBase *weapon, const V
 
 	switch (weapon->GetWeaponID())
 	{
+		case TF_WEAPON_ROCKETLAUNCHER:
+		case TF_WEAPON_ROCKETLAUNCHER_DIRECTHIT:
+		{
+			SDKUtils::GetProjectileFireSetupRebuilt(player, { 23.5f, static_cast<float>(SDKUtils::AttribHookValue(0, "centerfire_projectile", weapon)) == 1 ? 0.0f : 12.0f, ducking ? 8.0f : -3.0f }, angles, pos, ang, false);
+
+			auto speed{ player->InCond(TF_COND_RUNE_PRECISION) ? 3000.0f : SDKUtils::AttribHookValue(1100.0, "mult_projectile_speed", weapon) };
+
+			out = { TF_PROJECTILE_ROCKET, pos, ang, speed, 0.0f, true };
+
+			return true;
+		}
+
+		case TF_WEAPON_PARTICLE_CANNON:
+		{
+			SDKUtils::GetProjectileFireSetupRebuilt(player, { 23.5f, 8.0f, ducking ? 8.0f : -3.0f }, angles, pos, ang, false);
+
+			out = { TF_PROJECTILE_ENERGY_BALL, pos, ang, 1100.0f, 0.0f, true };
+
+			return true;
+		}
+
 		case TF_WEAPON_GRENADELAUNCHER:
 		{
 			SDKUtils::GetProjectileFireSetupRebuilt(player, { 16.0f, 8.0f, -6.0f }, angles, pos, ang, true);
@@ -26,6 +47,8 @@ bool CProjectileSim::GetInfo(C_TFPlayer *player, C_TFWeaponBase *weapon, const V
 			auto speed{ SDKUtils::AttribHookValue(1200.0, "mult_projectile_speed", weapon) };
 
 			out = { TF_PROJECTILE_PIPEBOMB, pos, ang, speed, 1.0f, is_lochnload };
+			out.m_bDragEnabled = true; // Grenades have drag
+			out.m_vDragBasis = Vec3(1, 1, 1); // Enable drag calculation
 
 			return true;
 		}
@@ -44,6 +67,8 @@ bool CProjectileSim::GetInfo(C_TFPlayer *player, C_TFWeaponBase *weapon, const V
 			}
 
 			out = { TF_PROJECTILE_PIPEBOMB_REMOTE, pos, ang, speed, 1.0f, false };
+			out.m_bDragEnabled = true; // Stickies have drag
+			out.m_vDragBasis = Vec3(1, 1, 1); // Enable drag calculation
 
 			return true;
 		}
@@ -53,6 +78,8 @@ bool CProjectileSim::GetInfo(C_TFPlayer *player, C_TFWeaponBase *weapon, const V
 			SDKUtils::GetProjectileFireSetupRebuilt(player, { 16.0f, 8.0f, -6.0f }, angles, pos, ang, true);
 
 			out = { TF_PROJECTILE_CANNONBALL, pos, ang, 1454.0f, 1.0f, false };
+			out.m_bDragEnabled = true; // Loose Cannon has drag
+			out.m_vDragBasis = Vec3(1, 1, 1); // Enable drag calculation
 
 			return true;
 		}
@@ -125,6 +152,9 @@ bool CProjectileSim::GetInfo(C_TFPlayer *player, C_TFWeaponBase *weapon, const V
 
 bool CProjectileSim::Init(const ProjectileInfo &info, bool no_vec_up)
 {
+	// Store the projectile info for drag queries
+	m_ProjectileInfo = info;
+
 	if (!env)
 	{
 		env = I::Physics->CreateEnvironment();

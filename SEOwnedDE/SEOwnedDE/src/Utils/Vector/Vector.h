@@ -165,6 +165,13 @@ public:
 		return Normalize();
 	}
 
+	Vec3 Normalized() const
+	{
+		Vec3 result(*this);
+		result.Normalize();
+		return result;
+	}
+
 	float Length2D(void) const
 	{
 		return sqrtf(x * x + y * y);

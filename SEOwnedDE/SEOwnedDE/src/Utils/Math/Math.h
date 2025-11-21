@@ -362,6 +362,53 @@ namespace Math
 		out[1] = in1.Dot(in2[1]);
 		out[2] = in1.Dot(in2[2]);
 	}
+
+	inline Vec3 RotatePoint(const Vec3 &point, const Vec3 &origin, const Vec3 &angles)
+	{
+		// Rotate a point around origin by angles
+		Vec3 delta = point - origin;
+
+		// Convert angles to radians
+		float pitch = DEG2RAD(angles.x);
+		float yaw = DEG2RAD(angles.y);
+		float roll = DEG2RAD(angles.z);
+
+		// Apply rotation matrices (yaw -> pitch -> roll)
+		// Yaw (Z-axis rotation)
+		if (angles.y != 0.0f)
+		{
+			float cosY = cosf(yaw);
+			float sinY = sinf(yaw);
+			float newX = delta.x * cosY - delta.y * sinY;
+			float newY = delta.x * sinY + delta.y * cosY;
+			delta.x = newX;
+			delta.y = newY;
+		}
+
+		// Pitch (Y-axis rotation)
+		if (angles.x != 0.0f)
+		{
+			float cosP = cosf(pitch);
+			float sinP = sinf(pitch);
+			float newX = delta.x * cosP + delta.z * sinP;
+			float newZ = -delta.x * sinP + delta.z * cosP;
+			delta.x = newX;
+			delta.z = newZ;
+		}
+
+		// Roll (X-axis rotation)
+		if (angles.z != 0.0f)
+		{
+			float cosR = cosf(roll);
+			float sinR = sinf(roll);
+			float newY = delta.y * cosR - delta.z * sinR;
+			float newZ = delta.y * sinR + delta.z * cosR;
+			delta.y = newY;
+			delta.z = newZ;
+		}
+
+		return origin + delta;
+	}
 }
 
 #pragma warning (pop)

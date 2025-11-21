@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../../../SDK/SDK.h"
+#include "../Visuals/FakeAngle/FakeAngle.h"
 
 class CMiscVisuals
 {

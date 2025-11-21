@@ -36,6 +36,24 @@
 #include "TF2/MD5.h"
 #include "TF2/c_tf_player.h"
 
+// Include Math namespace for RemapVal function
+namespace Math
+{
+	template <typename T>
+	constexpr T RemapVal(T x, T in_min, T in_max, T out_min, T out_max)
+	{
+		return (x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min;
+	}
+
+	template <typename T>
+	constexpr T RemapValClamped(T x, T in_min, T in_max, T out_min, T out_max)
+	{
+		if (x <= in_min) return out_min;
+		if (x >= in_max) return out_max;
+		return RemapVal(x, in_min, in_max, out_min, out_max);
+	}
+}
+
 #include "Helpers/Draw/Draw.h"
 #include "Helpers/Draw/DrawImGui.h"
 #include "Helpers/Entities/Entities.h"
@@ -44,6 +62,9 @@
 #include "Helpers/AimUtils/AimUtils.h"
 
 #include "Impl/TraceFilters/TraceFilters.h"
+
+// Include GlobalState after all base SDK headers to avoid circular dependency
+#include "../App/Features/Aimbot/GlobalState.h"
 
 #define PRINT(...) I::CVar->ConsoleColorPrintf({ 20, 220, 55, 255 }, __VA_ARGS__)
 
@@ -273,6 +294,60 @@ namespace SDKUtils
 		pCmd->forwardmove = std::cosf(yaw) * (450.0f * scale);
 		pCmd->sidemove = -std::sinf(yaw) * (450.0f * scale);
 	}
+
+	// Ported from Amalgam - CRITICAL for silent aim timing
+	// Uses I::GlobalVars->tickcount instead of pLocal->m_nTickBase() for proper attack timing
+	inline static int IsAttacking(C_TFPlayer* pLocal, C_TFWeaponBase* pWeapon, const CUserCmd* pCmd, bool bTickBase = false)
+	{
+		if (!pLocal || !pWeapon || pCmd->weaponselect)
+			return false;
+
+		int iTickBase = bTickBase ? I::GlobalVars->tickcount : pLocal->m_nTickBase();
+		float flTickBase = bTickBase ? I::GlobalVars->curtime : TICKS_TO_TIME(iTickBase);
+
+		if (pWeapon->GetWeaponID() == WEAPON_SLOT_MELEE)
+		{
+			// Handle melee weapons with special logic
+			switch (pWeapon->GetWeaponID())
+			{
+			case TF_WEAPON_KNIFE:
+				// CRITICAL FIX: Check weapon cooldown like Amalgam (line 14)
+				return g_GlobalState.bCanPrimaryAttack && (pCmd->buttons & IN_ATTACK);
+			case TF_WEAPON_BAT_WOOD:
+			case TF_WEAPON_BAT_GIFTWRAP:
+				// Special baseball throw timing would need SEOwnedDE adaptation
+				// For now, use basic melee check
+				break;
+			default:
+				break;
+			}
+
+			// Standard melee timing (ported from Amalgam)
+			// Note: m_flSmackTime would need SEOwnedDE adaptation
+			// return TIME_TO_TICKS(pWeapon->m_flSmackTime()) == iTickBase - 1;
+			return (pCmd->buttons & IN_ATTACK);
+		}
+
+		// Handle special projectile weapons
+		switch (pWeapon->GetWeaponID())
+		{
+		case TF_WEAPON_COMPOUND_BOW:
+			return !(pCmd->buttons & IN_ATTACK) && pWeapon->As<C_TFPipebombLauncher>()->m_flChargeBeginTime() > 0.f;
+		case TF_WEAPON_PIPEBOMBLAUNCHER:
+		case TF_WEAPON_STICKY_BALL_LAUNCHER:
+		case TF_WEAPON_GRENADE_STICKY_BALL:
+		{
+			float flCharge = pWeapon->As<C_TFPipebombLauncher>()->m_flChargeBeginTime() > 0.f ? flTickBase - pWeapon->As<C_TFPipebombLauncher>()->m_flChargeBeginTime() : 0.f;
+			// Note: AttribHookValue would need SEOwnedDE adaptation
+			const float flAmount = Math::RemapVal(flCharge, 0.f, 4.0f, 0.f, 1.f); // Default sticky charge rate
+			return !(pCmd->buttons & IN_ATTACK) && flAmount > 0.f || flAmount == 1.f;
+		}
+		}
+
+		// Default weapon behavior - check BOTH weapon cooldown AND button press (like Amalgam)
+		// CRITICAL FIX: Must check g_GlobalState.bCanPrimaryAttack to prevent firing every frame
+		return g_GlobalState.bCanPrimaryAttack && (pCmd->buttons & IN_ATTACK);
+	}
 }
 
 namespace G
@@ -309,7 +384,8 @@ namespace G
 
 namespace Shifting
 {
-	inline int nAvailableTicks = 0;
+	// Legacy compatibility - integrated with new CTicks system
+	inline int nAvailableTicks = 24;
 	inline bool bRecharging = false;
 	inline bool bShifting = false;
 	inline bool bRapidFireWantShift = false;
@@ -317,8 +393,7 @@ namespace Shifting
 
 	inline void Reset()
 	{
-		nAvailableTicks = 0;
-		bRecharging = false;
+		// Reset basic shifting state
 		bShifting = false;
 		bRapidFireWantShift = false;
 		bShiftingWarp = false;

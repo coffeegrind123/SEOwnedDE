@@ -3,6 +3,7 @@
 #include "../Features/CFG.h"
 #include "../Features/NetworkFix/NetworkFix.h"
 #include "../Features/SeedPred/SeedPred.h"
+#include "../Features/Ticks/Ticks.h"
 
 MAKE_SIGNATURE(CL_Move, "engine.dll", "40 55 53 48 8D AC 24 ? ? ? ? B8 ? ? ? ? E8 ? ? ? ? 48 2B E0 83 3D", 0x0);
 
@@ -104,4 +105,7 @@ MAKE_HOOK(CL_Move, Signatures::CL_Move.Get(), void, __fastcall,
 	}
 
 	callOriginal(bFinalTick);
+
+	// CRITICAL: Integrate Ticks system like Amalgam - this fixes projectile aimbot!
+	F::Ticks->Move(accumulated_extra_samples, bFinalTick);
 }

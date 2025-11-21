@@ -221,4 +221,17 @@ public:
 	{
 		reinterpret_cast<void(__fastcall *)(void *)>(Signatures::CBaseEntity_InvalidateBoneCache.Get())(this);
 	}
+
+	datamap_t* GetPredDescMap()
+	{
+		return reinterpret_cast<datamap_t*(__fastcall *)(C_BaseEntity *)>(Memory::GetVFunc(this, 15))(this);
+	}
+
+	int GetIntermediateDataSize()
+	{
+		auto pMap = GetPredDescMap();
+		if (!pMap)
+			return 4096;
+		return (pMap->packed_size > 4) ? pMap->packed_size : 4096;
+	}
 };

@@ -13,6 +13,10 @@ struct ProjectileInfo
 	float m_gravity_mod{};
 
 	bool no_spin{};
+
+	// Drag support (ported from Amalgam)
+	bool m_bDragEnabled{};
+	Vec3 m_vDragBasis{};
 };
 
 class CProjectileSim
@@ -22,6 +26,13 @@ public:
 	bool Init(const ProjectileInfo &info, bool no_vec_up = false);
 	void RunTick();
 	Vec3 GetOrigin();
+
+	// Drag support methods (ported from Amalgam)
+	bool IsDragEnabled() const { return m_ProjectileInfo.m_bDragEnabled; }
+	Vec3 GetDragBasis() const { return m_ProjectileInfo.m_vDragBasis; }
+
+private:
+	ProjectileInfo m_ProjectileInfo{};
 };
 
 MAKE_SINGLETON_SCOPED(CProjectileSim, ProjectileSim, F);

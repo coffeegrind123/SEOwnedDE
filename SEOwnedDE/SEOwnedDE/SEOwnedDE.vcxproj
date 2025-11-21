@@ -357,9 +357,8 @@
   <ItemGroup>
     <ClCompile Include="src\App\App.cpp" />
     <ClCompile Include="src\App\Features\Aimbot\Aimbot.cpp" />
-    <ClCompile Include="src\App\Features\Aimbot\AimbotHitscan\AimbotHitscan.cpp" />
-    <ClCompile Include="src\App\Features\Aimbot\AimbotMelee\AimbotMelee.cpp" />
-    <ClCompile Include="src\App\Features\Aimbot\AimbotProjectile\AimbotProjectile.cpp" />
+    <ClCompile Include="src\App\Features\Aimbot\GlobalState.cpp" />
+    <ClCompile Include="src\App\Features\Ticks\Ticks.cpp" />
     <ClCompile Include="src\App\Features\Crits\Crits.cpp" />
     <ClCompile Include="src\App\Hooks\CBaseEntity_AddVar.cpp" />
     <ClCompile Include="src\App\Hooks\CBaseEntity_BaseInterpolatePart1.cpp" />
@@ -370,7 +369,7 @@
     <ClCompile Include="src\App\Hooks\CEconItemSchema_GetItemDefinition.cpp" />
     <ClCompile Include="src\App\Hooks\CGameEventManager_FireEventIntern.cpp" />
     <ClCompile Include="src\App\Hooks\CHudTFCrosshair_ShouldDraw.cpp" />
-    <ClCompile Include="src\App\Hooks\ClientModeShared_CreateMove.cpp" />
+    <ClCompile Include="src\App\Hooks\CHLClient_CreateMove.cpp" />
     <ClCompile Include="src\App\Hooks\ClientModeShared_DoPostScreenSpaceEffects.cpp" />
     <ClCompile Include="src\App\Hooks\ClientModeShared_OverrideView.cpp" />
     <ClCompile Include="src\App\Hooks\CL_CheckForPureServerWhitelist.cpp" />
@@ -430,12 +429,14 @@
     <ClCompile Include="src\App\Features\Triggerbot\AutoVaccinator\AutoVaccinator.cpp" />
     <ClCompile Include="src\App\Features\Chat\Chat.cpp" />
     <ClCompile Include="src\App\Features\EnginePrediction\EnginePrediction.cpp" />
+    <ClCompile Include="src\App\Features\EnginePrediction\CPredictionCopy.cpp" />
     <ClCompile Include="src\App\Features\ESP\ESP.cpp" />
     <ClCompile Include="src\App\Features\LagRecords\LagRecords.cpp" />
     <ClCompile Include="src\App\Features\Materials\Materials.cpp" />
     <ClCompile Include="src\App\Features\Menu\LateRenderer\LateRenderer.cpp" />
     <ClCompile Include="src\App\Features\Menu\Menu.cpp" />
     <ClCompile Include="src\App\Features\MiscVisuals\MiscVisuals.cpp" />
+    <ClCompile Include="src\App\Features\Visuals\FakeAngle\FakeAngle.cpp" />
     <ClCompile Include="src\App\Features\Misc\Misc.cpp" />
     <ClCompile Include="src\App\Features\MovementSimulation\MovementSimulation.cpp" />
     <ClCompile Include="src\App\Features\NetworkFix\NetworkFix.cpp" />
@@ -481,6 +482,9 @@
     <ClCompile Include="src\SDK\Helpers\Draw\DrawImGui.cpp" />
     <ClCompile Include="src\App\Features\Menu\basicHook.cpp" />
     <ClCompile Include="src\App\Features\Menu\imguiHook.cpp" />
+    <ClCompile Include="src\App\Features\EnginePrediction\PredictionHelpers.cpp" />
+    <ClCompile Include="src\App\Features\GameRules\GameRules.cpp" />
+    <ClCompile Include="src\App\Features\EntityHelpers\EntityHelpers.cpp" />
     <ClCompile Include="src\Utils\VTFLoader\VTFLoader.cpp" />
     <ClCompile Include="include\imgui\imgui.cpp" />
     <ClCompile Include="include\imgui\imgui_draw.cpp" />
@@ -493,10 +497,8 @@
     <ClInclude Include="include\nlohmann\json_fwd.hpp" />
     <ClInclude Include="src\App\App.h" />
     <ClInclude Include="src\App\Features\Aimbot\Aimbot.h" />
-    <ClInclude Include="src\App\Features\Aimbot\AimbotCommon\AimbotCommon.h" />
-    <ClInclude Include="src\App\Features\Aimbot\AimbotHitscan\AimbotHitscan.h" />
-    <ClInclude Include="src\App\Features\Aimbot\AimbotMelee\AimbotMelee.h" />
-    <ClInclude Include="src\App\Features\Aimbot\AimbotProjectile\AimbotProjectile.h" />
+    <ClInclude Include="src\App\Features\Aimbot\GlobalState.h" />
+      <ClInclude Include="src\App\Features\Ticks\Ticks.h" />
     <ClInclude Include="src\App\Features\Crits\Crits.h" />
     <ClInclude Include="src\App\Features\VisualUtils\Icons.h" />
     <ClInclude Include="src\SDK\TF2\iviewrender.h" />
@@ -506,12 +508,16 @@
     <ClInclude Include="src\App\Features\Triggerbot\AutoVaccinator\AutoVaccinator.h" />
     <ClInclude Include="src\App\Features\CFG.h" />
     <ClInclude Include="src\App\Features\EnginePrediction\EnginePrediction.h" />
+    <ClInclude Include="src\App\Features\EnginePrediction\CPredictionCopy.h" />
+    <ClInclude Include="src\App\Features\EnginePrediction\DatamapAccess.h" />
+    <ClInclude Include="src\App\Features\EnginePrediction\PredictionHelpers.h" />
     <ClInclude Include="src\App\Features\ESP\ESP.h" />
     <ClInclude Include="src\App\Features\LagRecords\LagRecords.h" />
     <ClInclude Include="src\App\Features\Materials\Materials.h" />
     <ClInclude Include="src\App\Features\Menu\LateRenderer\LateRenderer.h" />
     <ClInclude Include="src\App\Features\Menu\Menu.h" />
     <ClInclude Include="src\App\Features\MiscVisuals\MiscVisuals.h" />
+    <ClInclude Include="src\App\Features\Visuals\FakeAngle\FakeAngle.h" />
     <ClInclude Include="src\App\Features\Misc\Misc.h" />
     <ClInclude Include="src\App\Features\MovementSimulation\MovementSimulation.h" />
     <ClInclude Include="src\App\Features\NetworkFix\NetworkFix.h" />
