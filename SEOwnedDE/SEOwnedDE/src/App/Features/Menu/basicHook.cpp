@@ -8,6 +8,7 @@
 #include "../SpyCamera/SpyCamera.h"
 #include "../SpyWarning/SpyWarning.h"
 #include "../SeedPred/SeedPred.h"
+#include <atomic>
 
 #define REGISTER_HOOK(pTarget, pDetour, ppOriginal) Hook(pTarget, pDetour, ppOriginal); \
 originalFunctions.push_back(pTarget);
@@ -25,6 +26,7 @@ tReset oReset = nullptr;
 // Global state for overlay visibility
 static bool g_overlayVisible = true;
 static bool g_initialized = false;
+static std::atomic<bool> g_unloading{false}; // Thread-safe unloading flag
 
 /**
  * @brief Extract Steam overlay function address from pattern using LEA instruction analysis
@@ -68,6 +70,15 @@ uintptr_t ExtractSteamFunction(const char* pattern, const char* patternName) {
  * @brief TF2 Present hook - renders overlay interface
  */
 HRESULT STDMETHODCALLTYPE hkPresent(IDirect3DDevice9* thisptr, const RECT* src, const RECT* dest, HWND wnd_override, const RGNDATA* dirty_region) {
+    // Skip rendering if unloading is in progress to prevent crashes
+    if (g_unloading.load(std::memory_order_acquire)) {
+        return oPresent(thisptr, src, dest, wnd_override, dirty_region);
+    }
+
+    // Additional safety check - ensure the hook is still valid
+    if (!oPresent) {
+        return E_FAIL;
+    }
     // Initialize ImGui on first call
     if (!g_initialized && thisptr) {
         HRESULT deviceState = thisptr->TestCooperativeLevel();
@@ -111,6 +122,11 @@ HRESULT STDMETHODCALLTYPE hkPresent(IDirect3DDevice9* thisptr, const RECT* src, 
         }
 
         try {
+            // Additional safety check - ensure global interfaces are still valid
+            if (!I::EngineClient || !I::GlobalVars || !H::Entities) {
+                return oPresent(thisptr, src, dest, wnd_override, dirty_region);
+            }
+
             // Data race fix in Entities.cpp should prevent flicker
             // No need for duplicate call filtering - let all Present calls through
 
@@ -125,43 +141,75 @@ HRESULT STDMETHODCALLTYPE hkPresent(IDirect3DDevice9* thisptr, const RECT* src, 
 
             // Render ESP in background draw list (stream-proof)
             if (F::ESP) {
-                F::ESP->RunImGui();
+                try {
+                    F::ESP->RunImGui();
+                } catch (...) {
+                    LOGHEX("ESP rendering error during unload", 0);
+                }
             }
 
             // Render Radar in background draw list (stream-proof)
             if (F::Radar) {
-                F::Radar->RunImGui();
+                try {
+                    F::Radar->RunImGui();
+                } catch (...) {
+                    LOGHEX("Radar rendering error during unload", 0);
+                }
             }
 
             // Render Team WellBeing in background draw list (stream-proof)
             if (F::TeamWellBeing) {
-                F::TeamWellBeing->RunImGui();
+                try {
+                    F::TeamWellBeing->RunImGui();
+                } catch (...) {
+                    LOGHEX("TeamWellBeing rendering error during unload", 0);
+                }
             }
 
             // Render Spectator List in background draw list (stream-proof)
             if (F::SpectatorList) {
-                F::SpectatorList->RunImGui();
+                try {
+                    F::SpectatorList->RunImGui();
+                } catch (...) {
+                    LOGHEX("SpectatorList rendering error during unload", 0);
+                }
             }
 
             // Render MiscVisuals features in background draw list (stream-proof)
             if (F::MiscVisuals) {
-                F::MiscVisuals->AimbotFOVCircleImGui();
-                F::MiscVisuals->ShiftBarImGui();
+                try {
+                    F::MiscVisuals->AimbotFOVCircleImGui();
+                    F::MiscVisuals->ShiftBarImGui();
+                } catch (...) {
+                    LOGHEX("MiscVisuals rendering error during unload", 0);
+                }
             }
 
             // Render SpyWarning in background draw list (stream-proof)
             if (F::SpyWarning) {
-                F::SpyWarning->RunImGui();
+                try {
+                    F::SpyWarning->RunImGui();
+                } catch (...) {
+                    LOGHEX("SpyWarning rendering error during unload", 0);
+                }
             }
 
             // Render SeedPred in background draw list (stream-proof)
             if (F::SeedPred) {
-                F::SeedPred->PaintImGui();
+                try {
+                    F::SeedPred->PaintImGui();
+                } catch (...) {
+                    LOGHEX("SeedPred rendering error during unload", 0);
+                }
             }
 
             // Render Menu (stream-proof)
             if (F::Menu && F::Menu->IsOpen()) {
-                F::Menu->RenderImguiFrame();
+                try {
+                    F::Menu->RenderImguiFrame();
+                } catch (...) {
+                    LOGHEX("Menu rendering error during unload", 0);
+                }
             }
 
             // Complete ImGui frame and render
@@ -251,22 +299,53 @@ void hooks::Uninitialize()
 {
     LOGHEX("Uninitializing TF2 Steam Overlay Hook", originalFunctions.size());
 
-    // Cleanup ImGui if initialized
-    if (g_initialized) {
-        ImGui_ImplDX9_Shutdown();
-        ImGui_ImplWin32_Shutdown();
-        ImGui::DestroyContext();
-        g_initialized = false;
-    }
+    // Set unloading flag to prevent Present hook from running during cleanup
+    g_unloading.store(true, std::memory_order_release);
 
-    // Remove all hooks
+    // Wait longer to ensure all in-progress Present calls complete
+    // Present can be called rapidly, so we need more time
+    Sleep(100);
+
+    // First, disable all hooks to prevent new calls while cleaning up
     for (auto& org : originalFunctions) {
         MH_DisableHook(org);
+    }
+
+    // Additional wait after disabling hooks
+    Sleep(50);
+
+    // Now cleanup ImGui if it was initialized
+    if (g_initialized) {
+        try {
+            // Set ImGui context to null first to prevent any new frame operations
+            ImGui::SetCurrentContext(nullptr);
+
+            ImGui_ImplDX9_Shutdown();
+            ImGui_ImplWin32_Shutdown();
+
+            // Only destroy context if we still have one
+            if (ImGui::GetCurrentContext()) {
+                ImGui::DestroyContext();
+            }
+
+            g_initialized = false;
+        }
+        catch (...) {
+            // If ImGui cleanup fails, just log and continue
+            LOGHEX("ImGui cleanup failed during unload", 0);
+        }
+    }
+
+    // Now remove all hooks completely
+    for (auto& org : originalFunctions) {
         MH_RemoveHook(org);
     }
 
+    // Clear the function list
     originalFunctions.clear();
-    // Don't call MH_Uninitialize() - SEOwnedDE HookManager handles that
+
+    // Reset Present hook pointer to prevent any late calls
+    oPresent = nullptr;
 
     LOGHEX("TF2 Steam Overlay Hook cleanup complete", 0);
 }

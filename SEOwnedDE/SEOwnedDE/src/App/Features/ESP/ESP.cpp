@@ -3,6 +3,8 @@
 #include "../CFG.h"
 #include "../SpyCamera/SpyCamera.h"
 #include "../VisualUtils/VisualUtils.h"
+#include <cmath>
+#include <float.h>
 
 constexpr int SPACING_X = 2;
 constexpr int SPACING_Y = 2;
@@ -71,6 +73,11 @@ bool CESP::GetDrawBounds(C_BaseEntity* pEntity, int& x, int& y, int& w, int& h)
 	if (!pCachedData)
 		return false;
 
+	// Only skip cached data if it's very old (more than 30 frames = ~0.5 seconds)
+	if (I::GlobalVars->framecount - pCachedData->frameNumber > 30) {
+		return false; // Cached data is too old
+	}
+
 	bool bIsPlayer = false;
 	const Vec3& vMins = pCachedData->mins;
 	const Vec3& vMaxs = pCachedData->maxs;
@@ -107,11 +114,30 @@ bool CESP::GetDrawBounds(C_BaseEntity* pEntity, int& x, int& y, int& w, int& h)
 
 	Vec3 flb = {}, brt = {}, blb = {}, frt = {}, frb = {}, brb = {}, blt = {}, flt = {};
 
+	// Enhanced W2S validation with coordinate bounds checking
 	if (H::DrawImGui->W2S(vTransformed[3], flb) && H::DrawImGui->W2S(vTransformed[5], brt)
 		&& H::DrawImGui->W2S(vTransformed[0], blb) && H::DrawImGui->W2S(vTransformed[4], frt)
 		&& H::DrawImGui->W2S(vTransformed[2], frb) && H::DrawImGui->W2S(vTransformed[1], brb)
 		&& H::DrawImGui->W2S(vTransformed[6], blt) && H::DrawImGui->W2S(vTransformed[7], flt))
 	{
+		// Validate that all screen coordinates are reasonable
+		const Vec3 coordsArray[] = {flb, brt, blb, frt, frb, brb, blt, flt};
+		bool bValidCoords = true;
+
+		for (int n = 0; n < 8; n++) {
+			// Check for NaN, infinity, or extreme values that indicate bad W2S projection
+			// Use _finite() from float.h instead of isfinite() for better compatibility
+			if (!_finite(static_cast<double>(coordsArray[n].x)) || !_finite(static_cast<double>(coordsArray[n].y)) ||
+				std::abs(coordsArray[n].x) > 50000.0f || std::abs(coordsArray[n].y) > 50000.0f) {
+				bValidCoords = false;
+				break;
+			}
+		}
+
+		if (!bValidCoords) {
+			return false; // Skip this entity due to invalid screen coordinates
+		}
+
 		const Vec3 arr[] = {flb, brt, blb, frt, frb, brb, blt, flt};
 
 		float left = flb.x;
@@ -163,6 +189,10 @@ void CESP::DrawBones(C_TFPlayer* pPlayer, Color_t color)
 	if (!pCachedData || !pCachedData->bBonesValid)
 		return;
 
+	// Only skip bone data if it's very old (more than 30 frames = ~0.5 seconds)
+	if (I::GlobalVars->framecount - pCachedData->frameNumber > 30)
+		return;
+
 	auto MatrixPosition = [](const matrix3x4_t& matrix, Vector& position)
 	{
 		position[0] = matrix[0][3];
@@ -201,6 +231,11 @@ void CESP::DrawBones(C_TFPlayer* pPlayer, Color_t color)
 		MatrixPosition(boneMatrix[pBone->parent], p2);
 
 		if (!H::DrawImGui->W2S(p2, p2s))
+			continue;
+
+		// Validate screen coordinates before drawing bones
+		if (!_finite(static_cast<double>(p1s.x)) || !_finite(static_cast<double>(p1s.y)) ||
+			!_finite(static_cast<double>(p2s.x)) || !_finite(static_cast<double>(p2s.y)))
 			continue;
 
 		H::DrawImGui->Line(static_cast<int>(p1s.x), static_cast<int>(p1s.y), static_cast<int>(p2s.x), static_cast<int>(p2s.y), color);
@@ -833,7 +868,12 @@ void CESP::RunImGui()
 	// The spectated player will use the standard FRAME_RENDER_START cache
 	// Minor jitter is acceptable trade-off vs flicker
 
+	// Additional safety check during unload
 	if (!CFG::ESP_Active || I::EngineVGui->IsGameUIVisible() || SDKUtils::BInEndOfMatch() || F::SpyCamera->IsRendering())
+		return;
+
+	// Safety check: ensure interfaces are still valid during unloading
+	if (!I::EngineClient || !I::GlobalVars || !H::Entities || !H::DrawImGui)
 		return;
 
 	if (CFG::Misc_Clean_Screenshot && I::EngineClient->IsTakingScreenshot())
@@ -841,10 +881,20 @@ void CESP::RunImGui()
 		return;
 	}
 
+	// Basic connection state validation
+	if (!I::EngineClient->IsInGame() || !I::EngineClient->IsConnected())
+		return;
+
 	auto pLocal = H::Entities->GetLocal();
 
 	if (!pLocal)
 		return;
+
+	// Relaxed pre-match validation - allow ESP in most spectator modes except pure spectator
+	if (pLocal->m_iObserverMode() == OBS_MODE_FREEZECAM)
+		return; // Skip frozen camera (likely transition state)
+
+	// Allow ESP in: deathcam, fixed, in-eye, chase, poi, roaming - useful spectator modes
 
 	ImDrawList* drawList = ImGui::GetBackgroundDrawList();
 	H::DrawImGui->SetDrawList(drawList);

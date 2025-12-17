@@ -28,6 +28,7 @@ public:
 
     void UpdateScreenSize();
     void UpdateW2SMatrix();
+    void ResetW2SMatrix(); // Force matrix reset after map changes
     void SetDrawList(ImDrawList* pDrawList) { m_pDrawList = pDrawList; }
     void ClearTextureCache();
 

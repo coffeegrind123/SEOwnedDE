@@ -12,6 +12,7 @@
 #include <cmath>
 #include <d3d9.h>
 #include <sstream>
+#include <float.h>
 
 #pragma warning (disable : 6385)
 #pragma warning (disable : 4996) // Disable deprecated function warnings
@@ -29,9 +30,71 @@ void CDrawImGui::UpdateW2SMatrix()
     if (m_nLastW2SUpdateFrame == currentFrame)
         return;
 
+    // Skip matrix updates during problematic game states
+    if (!I::EngineClient->IsInGame() || !I::EngineClient->IsConnected())
+        return;
+
+    // Check if we have a valid local player - better indicator of stable state
+    const auto pLocal = H::Entities ? H::Entities->GetLocal() : nullptr;
+    if (!pLocal)
+        return;
+
     m_nLastW2SUpdateFrame = currentFrame;
 
-    m_WorldToProjection = I::EngineClient->WorldToScreenMatrix();
+    VMatrix newMatrix = I::EngineClient->WorldToScreenMatrix();
+
+    // Enhanced matrix validation - check for common corruption patterns
+    bool bMatrixValid = true;
+    const float* pMatrix = reinterpret_cast<const float*>(&newMatrix);
+
+    // 1. Check for NaN/infinity values
+    for (int i = 0; i < 16; i++) {
+        if (!_finite(static_cast<double>(pMatrix[i]))) {
+            bMatrixValid = false;
+            break;
+        }
+    }
+
+    // 2. Check for obviously invalid matrix values (all zeros, extreme values)
+    if (bMatrixValid) {
+        bool bAllZeros = true;
+        for (int i = 0; i < 16; i++) {
+            if (pMatrix[i] != 0.0f) {
+                bAllZeros = false;
+                break;
+            }
+        }
+
+        if (bAllZeros) {
+            bMatrixValid = false;
+        }
+    }
+
+    // 3. Check for suspicious values during map transitions
+    if (bMatrixValid) {
+        // Very large values often indicate matrix corruption during map changes
+        for (int i = 0; i < 16; i++) {
+            if (std::abs(pMatrix[i]) > 10000.0f) {
+                bMatrixValid = false;
+                break;
+            }
+        }
+    }
+
+    // Only update matrix if it passes all validation checks
+    if (bMatrixValid) {
+        m_WorldToProjection = newMatrix;
+    }
+    // If matrix is invalid, keep the previous valid matrix to prevent ESP issues
+}
+
+void CDrawImGui::ResetW2SMatrix()
+{
+    // Force matrix update on next call by resetting frame counter
+    m_nLastW2SUpdateFrame = -1;
+
+    // Clear the current matrix to force fresh update
+    m_WorldToProjection = {};
 }
 
 bool CDrawImGui::W2S(const Vec3 &vOrigin, Vec3 &vScreen)

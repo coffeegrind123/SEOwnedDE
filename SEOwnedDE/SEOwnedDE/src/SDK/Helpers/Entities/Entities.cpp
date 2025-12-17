@@ -235,20 +235,38 @@ void CEntityHelper::UpdateRenderCache()
 				memcpy(&data.transform, &entityTransform, sizeof(matrix3x4_t));
 				data.renderOrigin = pEntity->GetRenderOrigin();
 
+				// Skip entities with completely invalid transforms only (extreme coordinates)
+				if (abs(data.renderOrigin.x) > 100000.0f || abs(data.renderOrigin.y) > 100000.0f ||
+					abs(data.renderOrigin.z) > 100000.0f) {
+					continue; // Entity has garbage coordinates - skip this frame
+				}
+
 				// Get bounds per entity type
 				switch (pEntity->GetClassId())
 				{
 				case ETFClassIds::CTFPlayer:
 					{
 						const auto pPlayer = pEntity->As<C_TFPlayer>();
+
+						// Relaxed player validation - only skip truly invalid states
+						if (pPlayer->IsDormant()) {
+							data.bBonesValid = false;
+							// Still cache bounds but don't attempt SetupBones for dormant players
+							data.mins = pPlayer->m_vecMins();
+							data.maxs = pPlayer->m_vecMaxs();
+							break;
+						}
+
 						data.mins = pPlayer->m_vecMins();
 						data.maxs = pPlayer->m_vecMaxs();
 
-						// Cache bone matrices for skeleton rendering (called ONCE per frame)
+						// Cache bone matrices with relaxed validation
 						data.bBonesValid = false;
-						if (pPlayer->SetupBones(data.boneMatrix, MAXSTUDIOBONES, BONE_USED_BY_HITBOX, I::GlobalVars->curtime))
-						{
-							data.bBonesValid = true;
+						if (!pPlayer->deadflag() || pPlayer->m_iHealth() > 0) {
+							// Only attempt SetupBones for players who might need bones
+							if (pPlayer->SetupBones(data.boneMatrix, MAXSTUDIOBONES, BONE_USED_BY_HITBOX, I::GlobalVars->curtime)) {
+								data.bBonesValid = true;
+							}
 						}
 						break;
 					}

@@ -5,6 +5,7 @@
 #include "../Features/WorldModulation/WorldModulation.h"
 #include "../Features/Paint/Paint.h"
 #include "../Features/SeedPred/SeedPred.h"
+#include "../../SDK/Helpers/Draw/DrawImGui.h"
 
 MAKE_HOOK(IBaseClientDLL_LevelShutdown, Memory::GetVFunc(I::BaseClientDLL, 7), void, __fastcall,
 	void* ecx)
@@ -12,6 +13,11 @@ MAKE_HOOK(IBaseClientDLL_LevelShutdown, Memory::GetVFunc(I::BaseClientDLL, 7), v
 	// Clear entity caches BEFORE original call to prevent accessing freed entities
 	// Pass true to clear both temp AND main buffers (prevents dangling pointers during transition)
 	H::Entities->ClearCache(true);
+
+	// Reset W2S matrix to prevent using stale data during level transition
+	if (H::DrawImGui) {
+		H::DrawImGui->ResetW2SMatrix();
+	}
 
 	CALL_ORIGINAL(ecx);
 

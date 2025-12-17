@@ -2,6 +2,7 @@
 
 #include "../Features/Players/Players.h"
 #include "../Features/CFG.h"
+#include "../../SDK/Helpers/Draw/DrawImGui.h"
 
 MAKE_HOOK(IBaseClientDLL_LevelInitPostEntity, Memory::GetVFunc(I::BaseClientDLL, 6), void, __fastcall,
 	void* ecx)
@@ -9,6 +10,12 @@ MAKE_HOOK(IBaseClientDLL_LevelInitPostEntity, Memory::GetVFunc(I::BaseClientDLL,
 	CALL_ORIGINAL(ecx);
 
 	H::Entities->UpdateModelIndexes();
+
+	// Reset W2S matrix cache to ensure fresh matrix after map change
+	if (H::DrawImGui) {
+		// Force W2S matrix reset to prevent using stale matrix data from previous map
+		H::DrawImGui->ResetW2SMatrix();
+	}
 
 	if (CFG::Visuals_Chat_Player_List_Info)
 	{

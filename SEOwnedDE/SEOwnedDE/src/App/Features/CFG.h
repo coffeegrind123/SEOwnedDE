@@ -6,7 +6,7 @@ namespace CFG
 {
 #pragma region Aimbot
 
-	CFGVAR(Aimbot_Active, true);
+	CFGVAR(Aimbot_Active, false);
 	CFGVAR(Aimbot_AutoShoot, true);
 	CFGVAR(Aimbot_Key, 0);
 	CFGVAR(Aimbot_Target_Players, true);
@@ -16,7 +16,7 @@ namespace CFG
 	CFGVAR(Aimbot_Ignore_Invulnerable, true);
 	CFGVAR(Aimbot_Ignore_Taunting, false);
 
-	CFGVAR(Aimbot_Hitscan_Active, true);
+	CFGVAR(Aimbot_Hitscan_Active, false);
 	CFGVAR(Aimbot_Hitscan_Target_LagRecords, false);
 	CFGVAR(Aimbot_Hitscan_Target_Stickies, true);
 	CFGVAR(Aimbot_Hitscan_Aim_Type, 1); //0 Normal 1 Silent 2 Smooth
@@ -35,7 +35,7 @@ namespace CFG
 	CFGVAR(Aimbot_Hitscan_Wait_For_Charge, false);
 	CFGVAR(Aimbot_Hitscan_Minigun_TapFire, false);
 
-	CFGVAR(Aimbot_Projectile_Active, true);
+	CFGVAR(Aimbot_Projectile_Active, false);
 	CFGVAR(Aimbot_Projectile_NoSpread, true);
 	CFGVAR(Aimbot_Projectile_Auto_Double_Donk, true);
 	CFGVAR(Aimbot_Projectile_Advanced_Head_Aim, true);
@@ -51,7 +51,7 @@ namespace CFG
 	CFGVAR(Aimbot_Projectile_Max_Simulation_Time, 1.5f);
 	CFGVAR(Aimbot_Projectile_Max_Processing_Targets, 1);
 
-	CFGVAR(Aimbot_Melee_Active, true);
+	CFGVAR(Aimbot_Melee_Active, false);
 	CFGVAR(Aimbot_Melee_Always_Active, false);
 	CFGVAR(Aimbot_Melee_Target_LagRecords, false);
 	CFGVAR(Aimbot_Melee_Aim_Type, 1); //0 Normal 1 Silent 2 Smooth
@@ -407,7 +407,7 @@ namespace CFG
 	CFGVAR(Misc_Taunt_Spin_Key, 0);
 	CFGVAR(Misc_Taunt_Spin_Speed, 12.0f);
 	CFGVAR(Misc_Taunt_Spin_Sine, false);
-	CFGVAR_NOSAVE(Misc_Accuracy_Improvements, true);
+	CFGVAR_NOSAVE(Misc_Accuracy_Improvements, false);
 	CFGVAR(Misc_Pure_Bypass, true);
 	CFGVAR(Misc_NoiseMaker_Spam, false);
 	CFGVAR(Misc_No_Push, true);
